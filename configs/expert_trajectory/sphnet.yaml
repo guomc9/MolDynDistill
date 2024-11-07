@@ -1,0 +1,43 @@
+data_cfg:
+  dataset_name: MD17
+  root: data/MD17
+  name: benzene
+  train_ratio: 0.7
+  valid_ratio: 0.1
+  seed: 42
+
+network_cfg:
+  name: spherenet
+  energy_and_force: False
+  cutoff: 5.0
+  num_layers: 4
+  hidden_channels: 128
+  out_channels: 1
+  int_emb_size: 64
+  basis_emb_size_dist: 8
+  basis_emb_size_angle: 8
+  basis_emb_size_torsion: 8
+  out_emb_channels: 256
+  num_spherical: 7
+  num_radial: 6
+  envelope_exponent: 5
+  num_before_skip: 1
+  num_after_skip: 2
+  num_output_layers: 3
+  output_init: GlorotOrthogonal
+  use_node_features: True
+
+train_cfg:
+  project_name: MoleculeDynamics-Expert-Trajectory
+  epochs: 500
+  batch_size: 32
+  vt_batch_size: 32
+  optimizer_name: Adam
+  weight_decay: 0
+  save_step: 1
+  lr: 5.0e-4
+  scheduler_name: stepLR
+  lr_decay_step_size: 50
+  lr_decay_factor: 0.5
+  energy_and_force: false
+  p: 100

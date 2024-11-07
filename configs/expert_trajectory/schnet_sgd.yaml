@@ -1,0 +1,34 @@
+data_cfg:
+  dataset_name: MD17
+  root: data/MD17
+  name: benzene
+  train_size: 1000
+  valid_size: 1000
+  seed: 42
+
+network_cfg:
+  name: schnet
+  hidden_channels: 128
+  num_filters: 128
+  cutoff: 10.0
+  energy_and_force: true
+  num_interactions: 3
+  num_gaussians: 50
+
+train_cfg:
+  project_name: MoleculeDynamics-Expert-Trajectory
+  epochs: 1000
+  batch_size: 1
+  vt_batch_size: 128
+  optimizer_name: SGD
+  weight_decay: 0
+  val_step: 1
+  test_step: 10000000
+  save_step: 1
+  lr: 1.0e-8
+  scheduler_name: ExpDecayLR
+  lr_decay_step_size: 100000
+  lr_decay_factor: 0.9
+  energy_and_force: true
+  p: 100
+  loss_func: 'l2'

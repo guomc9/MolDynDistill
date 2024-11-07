@@ -1,0 +1,5 @@
+.log
+wandb
+__pycache__
+.debug*
+data/MD17/*
