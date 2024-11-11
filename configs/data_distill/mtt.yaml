@@ -4,7 +4,6 @@ distill_cfg:
   num_iteration: 5000
   num_step_per_iteration: 10
   all_distill_data_per_iteration: True
-  enable_assistant_net: False
   expert_network: 'SchNet'
   expert_trajectory_dir: '.ckpt/expert_trajectory/schnet/benzene'
   max_start_epoch: 500
@@ -19,13 +18,16 @@ distill_cfg:
   eval_lr_decay_step_size: 100000
   save_step: 100
   distill_rate: 0.6
-  distill_batch: 20
-  distill_lr_assistant_net: 1.0e-9
-  distill_lr_lr: 1.0e-11
+  distill_batch: 4
+  # distill_lr_assistant_net: None
+  # distill_lr_lr: None
+  enable_assistant_net: False
   distill_base_lr: 3.0e-10
-  distill_energy_and_force: False
-  distill_lr_pos: 1.0e-5
+  distill_energy_and_force: True
+  distill_lr_pos: 1.0e-2
   lr_requires_grad: False
   pos_requires_grad: True
   energy_requires_grad: False
   force_requires_grad: False
+  max_grad_norm_clip: 1.0
+  # reinfer_energy_and_force: False

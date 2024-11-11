@@ -176,7 +176,8 @@ class DistillDatset:
     
     def get_lr(self, detach: bool=False):
         if detach:
-            distill_lr = self.distill_lr.detach().cpu().clone().requires_grad(False)
+            distill_lr = self.distill_lr.detach().cpu().clone()
+            distill_lr.requires_grad_(False)
             return distill_lr
         
         return self.distill_lr

@@ -17,8 +17,8 @@ train_dataset, valid_dataset, test_dataset = split_dataset(dataset=dataset, trai
 
 network = get_network(name='schnet', energy_and_force=True)
 # network.load_state_dict(torch.load(f'.log/expert_trajectory/schnet/MD17/benzene/2024-10-31-21-18-39/checkpoint_epoch_86.pt', map_location='cpu')['model_state_dict'])
-network.load_state_dict(torch.load(f'.log/expert_trajectory/schnet/MD17/benzene/2024-11-02-18-07-20/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])
-
+# network.load_state_dict(torch.load(f'.log/expert_trajectory/schnet/MD17/benzene/2024-11-02-18-07-20/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])
+network.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-11-04-17-27-23/checkpoint_epoch_89.pt', map_location='cpu')['model_state_dict'])
 
 network = network.to(device)
 infer = Infer()

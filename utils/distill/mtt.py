@@ -42,9 +42,9 @@ class MTT:
         eval_dataset, 
         device: str, 
         distill_batch: int, 
-        distill_lr_assistant_net: float, 
-        distill_lr_lr: float, 
-        distill_base_lr: float, 
+        distill_lr_assistant_net: float = None, 
+        distill_lr_lr: float = None, 
+        distill_base_lr: float = 3.0e-10, 
         all_distill_data_per_iteration: bool = True, 
         distill_lr_pos: float = None, 
         p: float = 100, 
@@ -54,6 +54,7 @@ class MTT:
         pos_requires_grad: bool = False, 
         energy_requires_grad: bool = False, 
         force_requires_grad: bool = False, 
+        max_grad_norm_clip: float = None, 
         enable_log: bool = True, 
         **kwargs
     ):
@@ -62,7 +63,6 @@ class MTT:
             wandb.config.update({
                 'num_iteration': num_iteration, 
                 'num_step_per_iteration': num_step_per_iteration, 
-                'expert_network': expert_network_name, 
                 'expert_trajectory_dir' : expert_trajectory_dir, 
                 'max_start_epoch': max_start_epoch, 
                 'distill_rate': distill_rate, 
@@ -90,19 +90,23 @@ class MTT:
         self.optimizer_pos = None
         self.optimizer_assistant = None
         self.optimizer_lr = None
-        if enable_assistant_net:
+        print(f'pos_requires_grad: {pos_requires_grad}')
+        print(f'distill_lr_pos: {distill_lr_pos}')
+        if enable_assistant_net and distill_lr_assistant_net is not None:
             self.optimizer_assistant = optim.SGD(assistant_net.parameters(), lr=distill_lr_assistant_net, momentum=0.0)
         if pos_requires_grad and distill_lr_pos is not None:
             self.optimizer_pos = optim.SGD([distill_dataset.get_pos()], lr=distill_lr_pos, momentum=0.0)
         if lr_requires_grad and distill_lr_lr is not None:
             self.optimizer_lr = optim.SGD([distill_dataset.get_lr()], lr=distill_lr_lr, momentum=0.0)
         
-        expert_file_list = []
+        expert_file_list = {}
         for file in os.listdir(expert_trajectory_dir):
             if re.search(r'\d', os.path.basename(file)):
-                expert_file_list.append(os.path.join(expert_trajectory_dir, file))
+                idx = int(re.findall(r'\d+', os.path.basename(file))[0])
+                expert_file_list[idx] = os.path.join(expert_trajectory_dir, file)
                 
-        expert_file_list = sorted(expert_file_list)
+        expert_file_list = dict(sorted(expert_file_list.items()))
+        print(expert_file_list)
         with tqdm(range(1, num_iteration+1)) as pbar:
             for it in pbar:
                 if self.optimizer_assistant is not None:
@@ -129,7 +133,7 @@ class MTT:
                 target_expert_params = torch.cat(target_expert_params, dim=0).to(device)
                 
                 student_params_list = [start_expert_params.detach().clone().requires_grad_(True)]
-                
+                print(f'expert_file_list[start_epoch]: {expert_file_list[start_epoch]}')
                 # Evaluate
                 if it % eval_step == 0:
                     print(f'Evaluating Distill Dataset...')
@@ -160,14 +164,14 @@ class MTT:
                         if res < best_valid:
                             best_valid = loss
                             print(f'Best loss at iteration {it}: {best_valid}')
-                            distill_dataset.save(os.path.join(save_dir, 'best', '.pt'))
+                            distill_dataset.save(os.path.join(save_dir, 'best_valid.pt'))
 
                         if enable_log:
                             wandb.log({"distill/best_valid": best_valid}, step=it)
 
                 # Save
                 if it % save_step == 0:
-                    distill_dataset.save(os.path.join(save_dir, str(it), '.pt'))
+                    distill_dataset.save(os.path.join(save_dir, str(it)+'.pt'))
 
                 # Distill
                 energy_criterion = torch.nn.MSELoss()
@@ -183,7 +187,7 @@ class MTT:
                     
                 for step in trange(num_step_per_iteration):
                     if all_distill_data_per_iteration:
-                        indices = torch.arange(step * distill_batch, (step + 1) * distill_batch, device=device, dtype=torch.long)
+                        indices = torch.arange(step * distill_batch, (step + 1) * distill_batch if (step + 1) * distill_batch < len(distill_dataset) else len(distill_dataset), device=device, dtype=torch.long)
                     else:
                         indices = torch.randperm(len(distill_dataset), device=device)[:distill_batch]
                     batch_data = distill_dataset.get_batch(indices)
@@ -195,16 +199,18 @@ class MTT:
                     else:
                         output = student_net(batch_data=batch_data, flat_param=student_params_list[-1])
                     
-                    loss = 1 / p * energy_criterion(output, batch_data.y.unsqueeze(1))
+                    loss = 0.01 * energy_criterion(output, batch_data.y.unsqueeze(1))
                     if distill_energy_and_force:
                         force = -torch.autograd.grad(outputs=output, inputs=batch_data.pos, 
                                     grad_outputs=torch.ones_like(output), 
                                     create_graph=True, retain_graph=True)[0]
-                        loss += force_criterion(force, batch_data.force)
+                        f_loss = force_criterion(force, batch_data.force)
+                        loss += f_loss
+                        print(f'f_loss: {f_loss.detach().cpu().item()}')
                     grad = torch.autograd.grad(loss, student_params_list[-1], create_graph=True)[0]
                     print(f'start_epoch: {start_epoch}, loss: {loss.detach().cpu().item()}, grad max: {torch.max(grad)}, lr: {distill_dataset.get_lr()}')
                     student_params_list.append(student_params_list[-1] - distill_dataset.get_lr() * grad)
-                            
+                
                 param_loss = torch.tensor(0.0).to(device)
                 param_dist = torch.tensor(0.0).to(device)
                 param_loss += torch.nn.functional.mse_loss(student_params_list[-1], target_expert_params, reduction="sum")
@@ -217,10 +223,22 @@ class MTT:
                 param_dist /= num_params
 
                 param_loss /= param_dist
+                
+                if self.optimizer_pos is not None:
+                    pos_grad = torch.autograd.grad(param_loss, distill_dataset.get_pos(), retain_graph=True)[0].abs()
+                    print(f"pos gradient for param loss: max={pos_grad.max()}, min={pos_grad.min()}, mean={pos_grad.mean()}")
+                    
+                param_loss.backward()
 
-                grad_loss = param_loss
-
-                grad_loss.backward()
+                if max_grad_norm_clip:
+                    if self.optimizer_pos is not None:
+                        torch.nn.utils.clip_grad_norm_(parameters=distill_dataset.get_pos(), max_norm=max_grad_norm_clip)
+                    
+                    if self.optimizer_assistant is not None:
+                        torch.nn.utils.clip_grad_norm_(parameters=assistant_net.parameters(), max_norm=max_grad_norm_clip)
+                    
+                    if self.optimizer_lr is not None:
+                        torch.nn.utils.clip_grad_norm_(parameters=distill_dataset.get_lr(), max_norm=max_grad_norm_clip)
 
                 if self.optimizer_assistant is not None:
                     self.optimizer_assistant.step()
@@ -230,13 +248,17 @@ class MTT:
                     self.optimizer_lr.step()
                 
                 if enable_log:
-                    wandb.log({"start_epoch": start_epoch, "distill/grad_loss": grad_loss.detach().cpu()}, step=it)
-                print(f'iter: {it}, distill_loss: {loss.detach().cpu().item()}')
+                    wandb.log({"start_epoch": start_epoch, "distill/param_loss": param_loss.detach().cpu()}, step=it)
+                print(f'iter: {it}, distill_loss: {param_loss.detach().cpu().item()}')
 
-                pbar.set_postfix(grad_loss=grad_loss.detach().cpu(), step=it)
+                pbar.set_postfix(param_loss=param_loss.detach().cpu(), step=it)
 
                 for _ in student_params_list:
                     del _
+                del output, batch_data, grad
+                if distill_energy_and_force:
+                    del force
+                torch.cuda.empty_cache()
         
         if enable_log:
             wandb.finish()

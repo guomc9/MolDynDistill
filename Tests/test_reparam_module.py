@@ -1,8 +1,14 @@
+import sys
+sys.path.append('.')
 import torch
+from utils.dataset import get_dataset, split_dataset
+from utils.net.schnet import SchNet
+from utils.distill.reparam_module import ReparamModule
 from torch_geometric.data import DataLoader
 from torch.autograd import grad
 from tqdm import tqdm
 from dig.threedgraph.evaluation import ThreeDEvaluator
+
 
 class Infer:
     """
@@ -14,7 +20,7 @@ class Infer:
         self.best_test = float('inf')
         
     def inference(self, device, test_dataset, 
-              model, loss_func=None, evaluation=None, batch_size=32,
+              reparam_model, params, loss_func=None, evaluation=None, batch_size=32,
               energy_and_force=False):
         """
         Main training loop with wandb integration
@@ -31,8 +37,7 @@ class Infer:
             project_name (str): Name for wandb project
             save_step (int): Save checkpoint every N epochs
         """
-        model = model.to(device)
-        num_params = sum(p.numel() for p in model.parameters())
+        num_params = sum(p.numel() for p in reparam_model.parameters())
         print(f'#Params: {num_params}')
         
         # Initialize scheduler
@@ -46,8 +51,8 @@ class Infer:
             
         # Testing  
         print('\n\nTesting...', flush=True)
-        test_mae = self._evaluate(model, test_loader, energy_and_force,
-                                evaluation, device)
+        test_mae = self._evaluate(reparam_model, params, data_loader=test_loader, energy_and_force=energy_and_force,
+                                evaluation=evaluation, device=device)
 
         metrics = {
             'test_mae': test_mae,
@@ -56,10 +61,10 @@ class Infer:
         print(f"\nMetrics: {metrics}")
         return metrics
 
-    def _evaluate(self, model, data_loader, energy_and_force, 
+    def _evaluate(self, reparam_model, params, data_loader, energy_and_force, 
                 evaluation, device):
         """Evaluation step"""
-        model.eval()
+        reparam_model.eval()
         preds = torch.Tensor([])
         targets = torch.Tensor([])
 
@@ -71,8 +76,7 @@ class Infer:
             batch_data = batch_data.to(device)
             if energy_and_force:
                 batch_data.pos.requires_grad_(True)
-                
-            out = model(batch_data)
+            out = reparam_model(batch_data, flat_param=params)
             
             if energy_and_force:
                 force = -grad(outputs=out, inputs=batch_data.pos,
@@ -97,3 +101,22 @@ class Infer:
             return energy_mae, force_mae
 
         return evaluation.eval(input_dict)['mae']
+    
+if __name__ == '__main__':
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    molecular = 'benzene'
+    dataset = get_dataset(dataset_name='MD17', root='data/MD17', name=molecular)
+    train_dataset, valid_dataset, test_dataset = split_dataset(dataset=dataset, train_size=1000, valid_size=10000, seed=42)
+    
+    load_net = SchNet()
+    load_net.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-11-04-17-27-23/checkpoint_epoch_89.pt')['model_state_dict'])
+    params = []
+    for param in load_net.parameters():
+        params.append(param.data.reshape(-1))
+    params = torch.cat(params, dim=0).to(device)
+    print(params.shape)
+    reparam_net = SchNet().to(device)
+    reparam_net = ReparamModule(reparam_net)
+    infer = Infer()
+    infer.inference(device, valid_dataset, reparam_net, params, energy_and_force=True, batch_size=64)

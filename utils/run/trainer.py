@@ -173,6 +173,8 @@ class Trainer:
         for _, batch_data in enumerate(tqdm(train_loader)):
             optimizer.zero_grad()
             batch_data = batch_data.to(device)
+            if energy_and_force:
+                batch_data.pos.requires_grad_(True)
             if assistant_model is not None:
                 assistant_outs = assistant_model(batch_data)
                 out = model(batch_data, assistant_outs=assistant_outs)
