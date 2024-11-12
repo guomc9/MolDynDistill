@@ -8,7 +8,7 @@ distill_cfg:
   expert_trajectory_dir: '.ckpt/expert_trajectory/schnet/benzene'
   max_start_epoch: 500
   num_expert_epoch: 3
-  eval_step: 2
+  eval_step: 200
   eval_network_pool: ['SchNet']
   eval_train_epoch: 1000
   # eval_batch_size: 128
@@ -22,7 +22,7 @@ distill_cfg:
   # distill_lr_assistant_net: None
   # distill_lr_lr: None
   enable_assistant_net: False
-  distill_base_lr: 3.0e-10
+  distill_base_lr: 1.0e-5
   distill_energy_and_force: True
   distill_lr_pos: 1.0e-2
   lr_requires_grad: False

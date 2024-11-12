@@ -169,17 +169,11 @@ class Trainer:
             assistant_model.eval()
             assistant_model.requires_grad_(False)
         loss_list = []
-        print(f'model allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.5f} GB')
         for _, batch_data in enumerate(tqdm(train_loader)):
             optimizer.zero_grad()
             batch_data = batch_data.to(device)
-            print(f'batch data allocated memory: {torch.cuda.memory_allocated(device) / 1024**3:.5f} GB')
             if energy_and_force:
                 batch_data.pos.requires_grad_(True)
-            print(f'batch_data.pos.shape: {batch_data.pos.shape}')
-            print(f'batch_data.y.shape: {batch_data.y.shape}')
-            print(f'batch_data.z.shape: {batch_data.z.shape}')
-            print(f'batch_data.force.shape: {batch_data.force.shape}')
             
             if assistant_model is not None:
                 assistant_outs = assistant_model(batch_data)
