@@ -56,6 +56,7 @@ class MTT:
         force_requires_grad: bool = False, 
         max_grad_norm_clip: float = None, 
         enable_log: bool = True, 
+        revise_energy_and_force: bool = True, 
         **kwargs
     ):
         if enable_log:
@@ -106,7 +107,12 @@ class MTT:
                 expert_file_list[idx] = os.path.join(expert_trajectory_dir, file)
                 
         expert_file_list = dict(sorted(expert_file_list.items()))
-        print(expert_file_list)
+        best_expert_net = None
+        if revise_energy_and_force:
+            best_expert_net = get_network(name=expert_network_name, return_assistant_net=False, **expert_network_dict)
+            best_expert_net.load_state_dict(torch.load(os.path.join(expert_trajectory_dir, 'best_valid_checkpoint.pt'))['model_state_dict'])
+            best_expert_net.to(device)
+            
         with tqdm(range(1, num_iteration+1)) as pbar:
             for it in pbar:
                 if self.optimizer_assistant is not None:
@@ -133,7 +139,7 @@ class MTT:
                 target_expert_params = torch.cat(target_expert_params, dim=0).to(device)
                 
                 student_params_list = [start_expert_params.detach().clone().requires_grad_(True)]
-                print(f'expert_file_list[start_epoch]: {expert_file_list[start_epoch]}')
+                
                 # Evaluate
                 if it % eval_step == 0:
                     print(f'Evaluating Distill Dataset...')
@@ -144,7 +150,7 @@ class MTT:
                             train_dataset=distill_dataset.to_torch(), 
                             valid_dataset=eval_dataset, 
                             test_dataset=None, 
-                            model=get_network(name=name), 
+                            model=get_network(name=name, **expert_network_dict), 
                             assistant_model=assistant_net, 
                             loss_func=torch.nn.MSELoss(), 
                             evaluation=None, 
@@ -199,14 +205,13 @@ class MTT:
                     else:
                         output = student_net(batch_data=batch_data, flat_param=student_params_list[-1])
                     
-                    loss = 0.01 * energy_criterion(output, batch_data.y.unsqueeze(1))
+                    loss = 1 / p * energy_criterion(output, batch_data.y.unsqueeze(1))
                     if distill_energy_and_force:
                         force = -torch.autograd.grad(outputs=output, inputs=batch_data.pos, 
                                     grad_outputs=torch.ones_like(output), 
                                     create_graph=True, retain_graph=True)[0]
                         f_loss = force_criterion(force, batch_data.force)
                         loss += f_loss
-                        print(f'f_loss: {f_loss.detach().cpu().item()}')
                     grad = torch.autograd.grad(loss, student_params_list[-1], create_graph=True)[0]
                     print(f'start_epoch: {start_epoch}, loss: {loss.detach().cpu().item()}, grad max: {torch.max(grad)}, lr: {distill_dataset.get_lr()}')
                     student_params_list.append(student_params_list[-1] - distill_dataset.get_lr() * grad)
@@ -248,10 +253,13 @@ class MTT:
                     self.optimizer_lr.step()
                 
                 if enable_log:
-                    wandb.log({"start_epoch": start_epoch, "distill/param_loss": param_loss.detach().cpu()}, step=it)
+                    wandb.log({"start_epoch": start_epoch, "distill/param_loss": param_loss.detach().cpu().item()}, step=it)
                 print(f'iter: {it}, distill_loss: {param_loss.detach().cpu().item()}')
 
                 pbar.set_postfix(param_loss=param_loss.detach().cpu(), step=it)
+
+                if revise_energy_and_force and best_expert_net is not None:
+                    self._revise_energy_and_force(distill_dataset, best_expert_net, batch_size=distill_batch, device=device, energy_and_force=distill_energy_and_force)
 
                 for _ in student_params_list:
                     del _
@@ -262,3 +270,41 @@ class MTT:
         
         if enable_log:
             wandb.finish()
+
+    def _revise_energy_and_force(self, distill_dataset, model, batch_size, device, energy_and_force: bool=True):
+        print(f'revising energy and force in distill dataset')
+        num_steps = (len(distill_dataset) + batch_size - 1) // batch_size
+        update_info = None
+        for i in range(num_steps):
+            indices = torch.arange(i * batch_size, (i + 1) * batch_size if (i + 1) * batch_size < len(distill_dataset) else len(distill_dataset), device=device, dtype=torch.long)
+            batch_data = distill_dataset.get_batch(indices)
+            if energy_and_force:
+                batch_data.pos.requires_grad_(True)
+            output = model(batch_data)
+            if energy_and_force:
+                force = -torch.autograd.grad(outputs=output, inputs=batch_data.pos, 
+                            grad_outputs=torch.ones_like(output), retain_graph=True)[0]
+            temp_update_info = distill_dataset.update_batch(idx=indices, energy=output.squeeze(dim=1).detach().clone(), force=force.detach().clone())
+            if update_info is None:
+                update_info = temp_update_info
+                for key in update_info:
+                    update_info[key]['mean'] = update_info[key]['mean'] / num_steps
+            else:
+                for key in temp_update_info:
+                    if key in update_info:
+                        for sub_key in temp_update_info[key]:
+                            if sub_key in update_info[key]:
+                                if sub_key == 'max':
+                                    update_info[key][sub_key] = max(update_info[key][sub_key], temp_update_info[key][sub_key])
+                                if sub_key == 'min':
+                                    update_info[key][sub_key] = min(update_info[key][sub_key], temp_update_info[key][sub_key])
+                                if sub_key == 'mean':
+                                    update_info[key][sub_key] = update_info[key][sub_key] + temp_update_info[key][sub_key] / num_steps
+            if energy_and_force:
+                del force
+            del output
+            
+            torch.cuda.empty_cache()
+        
+        print(update_info)
+        return update_info

@@ -18,7 +18,7 @@ network_cfg:
 train_cfg:
   project_name: MoleculeDynamics-Expert-Trajectory
   epochs: 1000
-  batch_size: 1
+  batch_size: 32
   vt_batch_size: 128
   optimizer_name: SGD
   weight_decay: 0

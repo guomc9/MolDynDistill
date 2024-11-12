@@ -5,7 +5,6 @@ import torch.utils.data
 from torch_geometric.datasets import QM9
 from .md17 import MD17
 import torch
-from sklearn.utils import shuffle
 from torch.utils.data import Subset
 import numpy as np
 
@@ -91,10 +90,22 @@ def get_dataset(dataset_name: str, root: str, name: str = None, **kwargs):
 from torch.utils.data import Dataset as TorchDataset
 from torch_geometric.data import Data as PygData
 class TorchDistillDataset(TorchDataset):
-    def __init__(self, z, pos, y, force, cz):
+    def __init__(self, z, pos, y, force, cz, num_atom_per_molecule):
         self.data_list = []
-        for _ in range(len(z)):
-            self.data_list.append(PygData(z=z, pos=pos, y=y, energy=y, force=force, cz=cz))
+        begin = 0
+        for i in range(len(y)):
+            end = (i + 1) * num_atom_per_molecule
+            self.data_list.append(
+                PygData(
+                    z=z[begin:end], 
+                    pos=pos[begin:end], 
+                    y=y[i], 
+                    energy=y[i], 
+                    force=force[begin:end], 
+                    cz=cz[begin:end]
+                    )
+                )
+            begin = end
 
     def __len__(self):
         return len(self.data_list)
@@ -162,7 +173,14 @@ class DistillDatset:
         self.batch_data = None
         
     def to_torch(self):
-        return TorchDistillDataset(z=self.z.detach().cpu().clone(), cz=self.cz.detach().cpu().clone(), pos=self.pos.detach().cpu().clone(), y=self.y.detach().cpu().clone(), force=self.force.detach().cpu().clone())
+        return TorchDistillDataset(
+            z=self.z.detach().cpu().clone().requires_grad_(False), 
+            cz=self.cz.detach().cpu().clone().requires_grad_(False), 
+            pos=self.pos.detach().cpu().clone().requires_grad_(False), 
+            y=self.y.detach().cpu().clone().requires_grad_(False), 
+            force=self.force.detach().cpu().clone().requires_grad_(False), 
+            num_atom_per_molecule=self.num_atom_per_molecule
+            )
     
     def __len__(self):
         return self.size
@@ -194,8 +212,35 @@ class DistillDatset:
     def get_force(self):
         return self.force
     
-    def update(self):
-        pass
+    def update_batch(self, idx, force=None, energy=None, pos=None):
+        update_info = {}
+        begin = idx[0] * self.num_atom_per_molecule
+        end = (idx[-1] + 1) * self.num_atom_per_molecule
+        if force is not None:
+            force_diff = torch.abs(force - self.force[begin:end]).detach().cpu()
+            update_info['force_update'] = {}
+            update_info['force_update']['max'] = torch.max(force_diff).item()
+            update_info['force_update']['mean'] = torch.mean(force_diff).item()
+            update_info['force_update']['min'] = torch.min(force_diff).item()
+            self.force[begin:end] = force
+        
+        if energy is not None:
+            energy_diff = torch.abs(energy - self.y[idx]).detach().cpu()
+            update_info['energy_update'] = {}
+            update_info['energy_update']['max'] = torch.max(energy_diff).item()
+            update_info['energy_update']['mean'] = torch.mean(energy_diff).item()
+            update_info['energy_update']['min'] = torch.min(energy_diff).item()
+            self.y[idx] = energy
+            
+        if pos is not None:
+            pos_diff = torch.abs(pos - self.pos[begin:end]).detach().cpu()
+            update_info['pos_update'] = {}
+            update_info['pos_update']['max'] = torch.max(pos_diff).item()
+            update_info['pos_update']['mean'] = torch.mean(pos_diff).item()
+            update_info['pos_update']['min'] = torch.min(pos_diff).item()
+            self.pos[begin:end] = pos
+        
+        return update_info
     
     def save(self, save_path):
         torch.save({

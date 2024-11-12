@@ -9,7 +9,7 @@ import torch
 from utils.dataset import get_dataset, split_dataset
 from utils.net import get_network
 from utils.run.trainer import Trainer
-# os.environ["WANDB_MODE"] = "offline"
+os.environ["WANDB_MODE"] = "offline"
 
 def parse_args():
     parser = argparse.ArgumentParser(
