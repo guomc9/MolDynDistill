@@ -1,5 +1,4 @@
 import os
-import copy
 import numpy as np
 import torch
 import torch.optim as optim
@@ -8,10 +7,12 @@ import torch.utils.data
 from tqdm import tqdm, trange
 import wandb
 import re
+import random
 from .reparam_module import ReparamModule
 from ..dataset import DistillDatset
 from ..net import get_network
 from ..run.trainer import Trainer
+from ..optimizers import get_dynamic_optimizer
 
 class MTT:
     def __init__(self):
@@ -26,6 +27,7 @@ class MTT:
         expert_network_dict: dict, 
         expert_trajectory_dir: str, 
         max_start_epoch: int, 
+        min_start_epoch: int, 
         num_expert_epoch: int, 
         eval_step: int, 
         eval_network_pool: list, 
@@ -44,12 +46,16 @@ class MTT:
         distill_batch: int, 
         distill_lr_assistant_net: float = None, 
         distill_lr_lr: float = None, 
-        distill_base_lr: float = 3.0e-10, 
+        distill_base_lr: float = 1.0e-4, 
         all_distill_data_per_iteration: bool = True, 
+        noise_pos: bool = True, 
+        
         distill_lr_pos: float = None, 
         p: float = 100, 
         enable_assistant_net: bool = True, 
         distill_energy_and_force: bool = True, 
+        distill_optimizer_type: str = 'adam', 
+        dynamic_optimizer_type: str = 'sgd', 
         lr_requires_grad: bool = False, 
         pos_requires_grad: bool = False, 
         energy_requires_grad: bool = False, 
@@ -85,25 +91,47 @@ class MTT:
         
         load_net = get_network(name=expert_network_name, return_assistant_net=False, **expert_network_dict)
         student_net = ReparamModule(student_net)
-        distill_dataset = DistillDatset(source_dataset=train_dataset, distill_rate=distill_rate, distill_lr=distill_base_lr, device=device, pos_requires_grad=pos_requires_grad or distill_energy_and_force, energy_requires_grad=energy_requires_grad, force_requires_grad=force_requires_grad)
+        distill_dataset = DistillDatset(source_dataset=train_dataset, distill_rate=distill_rate, distill_lr=distill_base_lr, device=device, pos_requires_grad=pos_requires_grad or distill_energy_and_force, energy_requires_grad=energy_requires_grad, force_requires_grad=force_requires_grad, noise_pos=noise_pos)
 
         # optimizers
         self.optimizer_pos = None
         self.optimizer_assistant = None
         self.optimizer_lr = None
-        print(f'pos_requires_grad: {pos_requires_grad}')
-        print(f'distill_lr_pos: {distill_lr_pos}')
+        # if enable_assistant_net and distill_lr_assistant_net is not None:
+        #     self.optimizer_assistant = optim.SGD(assistant_net.parameters(), lr=distill_lr_assistant_net, momentum=0.0)
+        # if pos_requires_grad and distill_lr_pos is not None:
+        #     self.optimizer_pos = optim.SGD([distill_dataset.get_pos()], lr=distill_lr_pos, momentum=0.0)
+        # if lr_requires_grad and distill_lr_lr is not None:
+        #     self.optimizer_lr = optim.SGD([distill_dataset.get_lr()], lr=distill_lr_lr, momentum=0.0)
+        
         if enable_assistant_net and distill_lr_assistant_net is not None:
-            self.optimizer_assistant = optim.SGD(assistant_net.parameters(), lr=distill_lr_assistant_net, momentum=0.0)
+            if distill_optimizer_type == 'adam':
+                self.optimizer_assistant = optim.Adam(assistant_net.parameters(), lr=distill_lr_assistant_net)
+                print(f'assistant net optimizer: Adam, lr: {distill_lr_assistant_net}')
+            else:
+                self.optimizer_assistant = optim.SGD(assistant_net.parameters(), lr=distill_lr_assistant_net, momentum=0.0)
+                print(f'assistant net optimizer: SGD, lr: {distill_lr_assistant_net}')
+                
         if pos_requires_grad and distill_lr_pos is not None:
-            self.optimizer_pos = optim.SGD([distill_dataset.get_pos()], lr=distill_lr_pos, momentum=0.0)
+            if distill_optimizer_type == 'adam':
+                self.optimizer_pos = optim.Adam([distill_dataset.get_pos()], lr=distill_lr_pos)
+                print(f'pos optimizer: Adam, lr: {distill_lr_pos}')
+            else:
+                self.optimizer_pos = optim.SGD([distill_dataset.get_pos()], lr=distill_lr_pos, momentum=0.0)
+                print(f'pos optimizer: SGD, lr: {distill_lr_pos}')
+                
         if lr_requires_grad and distill_lr_lr is not None:
-            self.optimizer_lr = optim.SGD([distill_dataset.get_lr()], lr=distill_lr_lr, momentum=0.0)
+            if distill_optimizer_type == 'adam':
+                self.optimizer_lr = optim.Adam([distill_dataset.get_lr()], lr=distill_lr_lr)
+                print(f'lr optimizer: Adam, lr: {distill_lr_lr}')
+            else:
+                self.optimizer_lr = optim.SGD([distill_dataset.get_lr()], lr=distill_lr_lr, momentum=0.0)
+                print(f'lr optimizer: SGD, lr: {distill_lr_lr}')
         
         expert_file_list = {}
         for file in os.listdir(expert_trajectory_dir):
             if re.search(r'\d', os.path.basename(file)):
-                idx = int(re.findall(r'\d+', os.path.basename(file))[0])
+                idx = int(re.findall(r'\d+', os.path.basename(file))[0])-1
                 expert_file_list[idx] = os.path.join(expert_trajectory_dir, file)
                 
         expert_file_list = dict(sorted(expert_file_list.items()))
@@ -122,8 +150,9 @@ class MTT:
                 if self.optimizer_lr is not None:
                     self.optimizer_lr.zero_grad()
                 
-                start_epoch = np.random.randint(0, max_start_epoch)
+                start_epoch = np.random.randint(min_start_epoch, max_start_epoch)
                 end_epoch = start_epoch + num_expert_epoch
+                print(f'start_epoch -> end_epoch: {start_epoch}->{end_epoch}')
                 
                 # Load Expert Trajectory
                 start_expert_params = []
@@ -139,6 +168,7 @@ class MTT:
                 target_expert_params = torch.cat(target_expert_params, dim=0).to(device)
                 
                 student_params_list = [start_expert_params.detach().clone().requires_grad_(True)]
+                dynamic_optimizer = get_dynamic_optimizer(optimizer_type=dynamic_optimizer_type, params=student_params_list[-1], t=start_epoch * distill_dataset.get_source_size())
                 
                 # Evaluate
                 if it % eval_step == 0:
@@ -158,7 +188,7 @@ class MTT:
                             lr=distill_dataset.get_lr(detach=True), 
                             batch_size=distill_batch, 
                             vt_batch_size=eval_vt_batch_size, 
-                            optimizer_name='SGD', 
+                            optimizer_name=dynamic_optimizer_type, 
                             scheduler_name=eval_scheduler_name, 
                             lr_decay_factor=eval_lr_decay_factor, 
                             lr_decay_step_size=eval_lr_decay_step_size, 
@@ -190,13 +220,16 @@ class MTT:
                 num_params = sum([np.prod(param.size()) for param in (student_net.parameters())])
                 if all_distill_data_per_iteration:
                     num_step_per_iteration = (len(distill_dataset) + distill_batch - 1) // distill_batch
-                    
                 for step in trange(num_step_per_iteration):
                     if all_distill_data_per_iteration:
                         indices = torch.arange(step * distill_batch, (step + 1) * distill_batch if (step + 1) * distill_batch < len(distill_dataset) else len(distill_dataset), device=device, dtype=torch.long)
                     else:
-                        indices = torch.randperm(len(distill_dataset), device=device)[:distill_batch]
+                        begin = random.randint(0, len(distill_dataset) - distill_batch)
+                        indices = torch.arange(begin, begin+distill_batch, device=device)
                     batch_data = distill_dataset.get_batch(indices)
+                    # print("Pos requires_grad:", distill_dataset.pos.requires_grad)
+                    # print("Batch pos requires_grad:", batch_data.pos.requires_grad)
+                    # print("Batch pos grad_fn:", batch_data.pos.grad_fn)
                     if distill_energy_and_force:
                         batch_data.pos.requires_grad_(True)
                     if assistant_net is not None:
@@ -212,9 +245,8 @@ class MTT:
                                     create_graph=True, retain_graph=True)[0]
                         f_loss = force_criterion(force, batch_data.force)
                         loss += f_loss
-                    grad = torch.autograd.grad(loss, student_params_list[-1], create_graph=True)[0]
-                    print(f'start_epoch: {start_epoch}, loss: {loss.detach().cpu().item()}, grad max: {torch.max(grad)}, lr: {distill_dataset.get_lr()}')
-                    student_params_list.append(student_params_list[-1] - distill_dataset.get_lr() * grad)
+                    grad = torch.autograd.grad(loss, student_params_list[-1], create_graph=True, retain_graph=True)[0]
+                    student_params_list.append(dynamic_optimizer.step(student_params_list[-1], grad, distill_dataset.get_lr()))
                 
                 param_loss = torch.tensor(0.0).to(device)
                 param_dist = torch.tensor(0.0).to(device)
@@ -229,11 +261,14 @@ class MTT:
 
                 param_loss /= param_dist
                 
-                if self.optimizer_pos is not None:
-                    pos_grad = torch.autograd.grad(param_loss, distill_dataset.get_pos(), retain_graph=True)[0].abs()
-                    print(f"pos gradient for param loss: max={pos_grad.max()}, min={pos_grad.min()}, mean={pos_grad.mean()}")
-                    
                 param_loss.backward()
+                if self.optimizer_pos is not None:
+                    pos_grad = distill_dataset.get_pos().grad.abs()
+                    if torch.isnan(pos_grad).sum().item() > 0:
+                        print(f'pos_grad.shape: {pos_grad.shape}')
+                        print(f'pos_grad is NAN: {torch.isnan(pos_grad).sum().item()}')
+                        print(f'pos_grad is zero: {(torch.abs(pos_grad) < 1e-5).sum().item()}')
+                        print(f"pos gradient for param loss: max={pos_grad.max()}, min={pos_grad.min()}, mean={pos_grad.mean()}")
 
                 if max_grad_norm_clip:
                     if self.optimizer_pos is not None:

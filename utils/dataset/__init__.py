@@ -154,18 +154,39 @@ class DistillData:
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 class DistillDatset:
-    def __init__(self, source_dataset, distill_rate: float, distill_lr: float, device: str, cluster_rate: float=0.5, pos_requires_grad=False, energy_requires_grad=False, force_requires_grad: bool=False):
+    def __init__(
+        self, 
+        source_dataset, 
+        distill_rate: float, 
+        distill_lr: float, 
+        device: str, 
+        cluster_rate: float=0.5, 
+        pos_requires_grad=False, 
+        energy_requires_grad=False, 
+        force_requires_grad: bool=False, 
+        noise_pos: bool=True, 
+        ):
         self.source_size = len(source_dataset)
         self.size = int(self.source_size * distill_rate)
-        self.num_cluster = int(self.source_size * cluster_rate)
         ids = torch.randperm(self.source_size)[:self.size]
         self.pos = source_dataset[ids].pos.clone().to(device)
+        if noise_pos:
+            N = self.pos.shape[0]
+            mean = torch.mean(self.pos, dim=0, keepdim=True)
+            std = torch.std(self.pos, dim=0, unbiased=True, keepdim=True)
+            print(f'mean: {mean}, std: {std}')
+            self.pos = self.pos + torch.normal(mean=mean.expand(N, 3), std=std.expand(N, 3))
+            
         self.z = source_dataset[ids].z.clone().to(device)
         self.y = source_dataset[ids].y.clone().to(device)
         self.force = source_dataset[ids].force.clone().to(device)
         self.num_atom_per_molecule = self.pos.shape[0] // self.y.shape[0]
-        _, self.cz = self.molecular_clustering(self.num_cluster)
-        self.cz = torch.from_numpy(self.cz).long().to(device)
+        
+        self.num_cluster = int(self.source_size * cluster_rate)
+        with torch.no_grad():
+            _, self.cz = self.molecular_clustering(self.num_cluster)
+            self.cz = torch.from_numpy(self.cz).long().to(device)
+            
         self.distill_lr = torch.tensor(distill_lr, device=device, requires_grad=True)
         self.pos.requires_grad_(pos_requires_grad)
         self.y.requires_grad_(energy_requires_grad)
@@ -252,7 +273,6 @@ class DistillDatset:
             }, save_path)
         print(f"Distill dataset saved to {save_path}")
         
-
     def molecular_clustering(self, num_clusters=1000):
         """
         Clustering for molecular
@@ -280,3 +300,6 @@ class DistillDatset:
     
     def get_num_cluster(self):
         return self.num_cluster
+    
+    def get_source_size(self):
+        return self.source_size

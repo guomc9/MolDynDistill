@@ -90,7 +90,7 @@ class Trainer:
 
         train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
         valid_loader = DataLoader(valid_dataset, vt_batch_size, shuffle=False) if valid_dataset is not None else None
-        test_loader = DataLoader(test_dataset, vt_batch_size, shuffle=False)
+        test_loader = DataLoader(test_dataset, vt_batch_size, shuffle=False) if test_dataset is not None else None
             
         if save_dir and not os.path.exists(save_dir):
             os.makedirs(save_dir)
