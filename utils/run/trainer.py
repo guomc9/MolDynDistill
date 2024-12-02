@@ -16,6 +16,8 @@ class Trainer:
     def __init__(self):
         """Initialize trainer"""
         self.best_valid = float('inf')
+        self.best_valid_energy = float('inf')
+        self.best_valid_force = float('inf')
         self.best_test = float('inf')
         
     def train(self, device, train_dataset, valid_dataset, test_dataset, 
@@ -24,7 +26,8 @@ class Trainer:
               scheduler_name=None, lr_decay_factor=0.5, 
               lr_decay_step_size=50, weight_decay=0,
               energy_and_force=False, p=100, save_dir='',
-              project_name='3DGN-Training', val_step=10, test_step=10, save_step=50, enable_log=True, wandb_run_id=None, **kwargs):
+              project_name='3DGN-Training', val_step=10, test_step=10, save_step=50, early_epoch=10, early_save_iters=50, 
+              enable_log=True, wandb_run_id=None, **kwargs):
         """
         Main training loop with wandb integration
         
@@ -70,28 +73,35 @@ class Trainer:
         print(f'#Params: {num_params}')
         
         # Initialize optimizer
-        if optimizer_name == 'Adam':
+        if str.lower(optimizer_name) == 'adam':
             optimizer = Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-        elif optimizer_name == 'AdamW':
+        elif str.lower(optimizer_name) == 'adamw':
             optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-        elif optimizer_name == 'SGD':
+        elif str.lower(optimizer_name) == 'sgd':
             optimizer = SGD(model.parameters(), lr=lr, weight_decay=weight_decay)
         else:
             raise ValueError(f"Optimizer {optimizer_name} not supported")
             
         # Initialize scheduler
         scheduler = None
-        if scheduler_name == 'StepLR':
+        if str.lower(scheduler_name) == 'steplr':
             scheduler = StepLR(optimizer, step_size=lr_decay_step_size, gamma=lr_decay_factor)
-        else:
-            
+        elif str.lower(scheduler_name) == 'expdecaylr':
             decay_lambda = lambda step: lr_decay_factor ** (step / lr_decay_step_size)
             scheduler = LambdaLR(optimizer, lr_lambda=decay_lambda)
+        else:
+            scheduler = None
 
         train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
         valid_loader = DataLoader(valid_dataset, vt_batch_size, shuffle=False) if valid_dataset is not None else None
         test_loader = DataLoader(test_dataset, vt_batch_size, shuffle=False) if test_dataset is not None else None
-            
+        
+        self._save_checkpoint(save_dir, 'checkpoint_epoch_0.pt',
+                                            model, optimizer, scheduler, None, None, 0, 0)
+        self._save_checkpoint(save_dir, 'checkpoint_iters_0.pt',
+                                            model, optimizer, scheduler, None, None, 0, 0)
+        
+        
         if save_dir and not os.path.exists(save_dir):
             os.makedirs(save_dir)
             
@@ -118,7 +128,7 @@ class Trainer:
             # Training
             print('\nTraining...', flush=True)
             train_err = self._train_epoch(model, assistant_model, optimizer, scheduler, train_loader, 
-                                        energy_and_force, p, loss_func, device)
+                                        energy_and_force, p, loss_func, epoch, early_epoch, early_save_iters, device, save_dir)
             print({'train_err': train_err})
             if enable_log:
                 wandb.log({'train_err': train_err, 'lr': optimizer.param_groups[0]['lr']}, step=epoch)
@@ -126,35 +136,39 @@ class Trainer:
             # Validation
             if valid_loader is not None and epoch % val_step == 0:
                 print('\n\nEvaluating...', flush=True)
-                valid_err = self._evaluate(model, valid_loader, energy_and_force, 
+                valid_err, energy_valid_err, force_valid_err = self._evaluate(model, valid_loader, energy_and_force, 
                                         1, evaluation, device)
                     
                 # Save checkpoint on validation improvement
                 if valid_err < self.best_valid:
                     self.best_valid = valid_err
+                    self.best_valid_energy = energy_valid_err
+                    self.best_valid_force = force_valid_err
                     if save_dir:
                         self._save_checkpoint(save_dir, 'best_valid_checkpoint.pt',
-                                            model, optimizer, scheduler, epoch)
-                print({'valid_err': valid_err, 'best_valid': self.best_valid})
+                                            model, optimizer, scheduler, None, valid_err, epoch, (epoch-1)*len(train_loader))
+                print({'valid_err': valid_err, 'best_valid': self.best_valid, 'best_valid_energy': self.best_valid_energy, 'best_valid_force': self.best_valid_force})
                 if enable_log:
-                    wandb.log({'valid_err': valid_err, 'best_valid': self.best_valid}, step=epoch)
+                    wandb.log({'valid_err': valid_err, 'valid_energy_err': energy_valid_err, 'valid_force_err': force_valid_err, \
+                        'best_valid': self.best_valid, 'best_valid_energy': self.best_valid_energy, 'best_valid_force': self.best_valid_force}, step=epoch)
 
             # Testing  
             if test_loader is not None and epoch % test_step == 0:
                 print('\n\nTesting...', flush=True)
-                test_err = self._evaluate(model, test_loader, energy_and_force,
+                test_err, energy_test_err, force_test_err = self._evaluate(model, test_loader, energy_and_force,
                                         1, evaluation, device)
                 
-                print({'test_err': test_err})
+                print({'test_err': test_err, 'energy_test_err': energy_test_err, 'force_test_err': force_test_err})
                 if enable_log:
-                    wandb.log({'test_err': test_err}, step=epoch)
+                    wandb.log({'test_err': test_err, 'energy_test_err': energy_test_err, 'force_test_err': force_test_err}, step=epoch)
             
                     
             # Periodic checkpoint saving
             if save_dir and epoch % save_step == 0:
                 self._save_checkpoint(save_dir, f'checkpoint_epoch_{epoch}.pt',
-                                    model, optimizer, scheduler, epoch)
-
+                                    model, optimizer, scheduler, train_err, None, epoch, epoch*len(train_loader))
+                self._save_checkpoint(save_dir, f'checkpoint_iters_{epoch*len(train_loader)}.pt',
+                                    model, optimizer, scheduler, train_err, None, epoch, epoch*len(train_loader))
         print(f'Best validation error: {self.best_valid}')
         if enable_log:
             wandb.finish()
@@ -162,14 +176,16 @@ class Trainer:
         return self.best_valid
         
     def _train_epoch(self, model, assistant_model, optimizer, scheduler, train_loader, 
-                     energy_and_force, p, loss_func, device):
+                     energy_and_force, p, loss_func, epoch, early_epoch, early_save_iters, device, save_dir):
         """Training for one epoch"""
         model.train()
+        iters = (epoch - 1) * len(train_loader)
+        last_loss = None
         if assistant_model is not None:
             assistant_model.eval()
             assistant_model.requires_grad_(False)
         loss_list = []
-        for _, batch_data in enumerate(tqdm(train_loader)):
+        for i, batch_data in enumerate(tqdm(train_loader)):
             optimizer.zero_grad()
             batch_data = batch_data.to(device)
             if energy_and_force:
@@ -194,10 +210,18 @@ class Trainer:
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
+            iters += 1
             if scheduler:
                 scheduler.step()
             
             loss_list.append(loss.detach().cpu().item())
+            
+            if last_loss is None:
+                last_loss = sum(loss_list) / len(loss_list)
+                
+            if epoch <= early_epoch and iters % early_save_iters == 0:
+                last_loss = sum(loss_list) / len(loss_list)
+                self._save_checkpoint(save_dir, f'checkpoint_iters_{iters}.pt', model, optimizer, scheduler, last_loss, None, epoch, iters)
             
             del loss, out, batch_data
             if energy_and_force:
@@ -242,18 +266,21 @@ class Trainer:
             input_dict_force = {"y_true": targets_force, "y_pred": preds_force}
             energy_mae = evaluation.eval(input_dict)['mae']
             force_mae = evaluation.eval(input_dict_force)['mae']
-            return energy_mae + p * force_mae
+            return energy_mae + p * force_mae, energy_mae, force_mae
 
         return evaluation.eval(input_dict)['mae']
     
     def _save_checkpoint(self, save_dir, filename, model, optimizer, 
-                        scheduler, epoch):
+                        scheduler, train_err, valid_err, epoch, iters):
         """Save model checkpoint"""
         checkpoint = {
             'epoch': epoch,
+            'iters': iters, 
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'best_valid_mae': self.best_valid
+            'best_valid_mae': self.best_valid, 
+            'train_err': train_err, 
+            'valid_err': valid_err
         }
         
         if scheduler is not None:

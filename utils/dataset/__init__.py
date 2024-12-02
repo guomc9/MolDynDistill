@@ -166,32 +166,33 @@ class DistillDatset:
         force_requires_grad: bool=False, 
         noise_pos: bool=True, 
         ):
-        self.source_size = len(source_dataset)
-        self.size = int(self.source_size * distill_rate)
-        ids = torch.randperm(self.source_size)[:self.size]
-        self.pos = source_dataset[ids].pos.clone().to(device)
-        if noise_pos:
-            N = self.pos.shape[0]
-            mean = torch.mean(self.pos, dim=0, keepdim=True)
-            std = torch.std(self.pos, dim=0, unbiased=True, keepdim=True)
-            print(f'mean: {mean}, std: {std}')
-            self.pos = self.pos + torch.normal(mean=mean.expand(N, 3), std=std.expand(N, 3))
+        if source_dataset is not None:
+            self.source_size = len(source_dataset)
+            self.size = int(self.source_size * distill_rate)
+            ids = torch.randperm(self.source_size)[:self.size]
+            self.pos = source_dataset[ids].pos.clone().to(device)
+            if noise_pos:
+                N = self.pos.shape[0]
+                mean = torch.mean(self.pos, dim=0, keepdim=True)
+                std = torch.std(self.pos, dim=0, unbiased=True, keepdim=True)
+                print(f'mean: {mean}, std: {std}')
+                self.pos = self.pos + torch.normal(mean=mean.expand(N, 3), std=std.expand(N, 3))
+                
+            self.z = source_dataset[ids].z.clone().to(device)
+            self.y = source_dataset[ids].y.clone().to(device)
+            self.force = source_dataset[ids].force.clone().to(device)
+            self.num_atom_per_molecule = self.pos.shape[0] // self.y.shape[0]
             
-        self.z = source_dataset[ids].z.clone().to(device)
-        self.y = source_dataset[ids].y.clone().to(device)
-        self.force = source_dataset[ids].force.clone().to(device)
-        self.num_atom_per_molecule = self.pos.shape[0] // self.y.shape[0]
-        
-        self.num_cluster = int(self.source_size * cluster_rate)
-        with torch.no_grad():
-            _, self.cz = self.molecular_clustering(self.num_cluster)
-            self.cz = torch.from_numpy(self.cz).long().to(device)
-            
-        self.distill_lr = torch.tensor(distill_lr, device=device, requires_grad=True)
-        self.pos.requires_grad_(pos_requires_grad)
-        self.y.requires_grad_(energy_requires_grad)
-        self.force.requires_grad_(force_requires_grad)
-        self.batch_data = None
+            self.num_cluster = int(self.size * cluster_rate)
+            with torch.no_grad():
+                _, self.cz = self.molecular_clustering(self.num_cluster)
+                self.cz = torch.from_numpy(self.cz).long().to(device)
+                
+            self.distill_lr = torch.tensor(distill_lr, device=device, requires_grad=True)
+            self.pos.requires_grad_(pos_requires_grad)
+            self.y.requires_grad_(energy_requires_grad)
+            self.force.requires_grad_(force_requires_grad)
+            self.batch_data = None
         
     def to_torch(self):
         return TorchDistillDataset(
@@ -262,6 +263,33 @@ class DistillDatset:
             self.pos[begin:end] = pos
         
         return update_info
+        
+    def check_batch(self, idx, force=None, energy=None, pos=None):
+        check_info = {}
+        begin = idx[0] * self.num_atom_per_molecule
+        end = (idx[-1] + 1) * self.num_atom_per_molecule
+        if force is not None:
+            force_diff = torch.abs(force - self.force[begin:end]).detach().cpu()
+            check_info['force_error'] = {}
+            check_info['force_error']['max'] = torch.max(force_diff).item()
+            check_info['force_error']['mean'] = torch.mean(force_diff).item()
+            check_info['force_error']['min'] = torch.min(force_diff).item()
+        
+        if energy is not None:
+            energy_diff = torch.abs(energy - self.y[idx]).detach().cpu()
+            check_info['energy_error'] = {}
+            check_info['energy_error']['max'] = torch.max(energy_diff).item()
+            check_info['energy_error']['mean'] = torch.mean(energy_diff).item()
+            check_info['energy_error']['min'] = torch.min(energy_diff).item()
+            
+        if pos is not None:
+            pos_diff = torch.abs(pos - self.pos[begin:end]).detach().cpu()
+            check_info['pos_error'] = {}
+            check_info['pos_error']['max'] = torch.max(pos_diff).item()
+            check_info['pos_error']['mean'] = torch.mean(pos_diff).item()
+            check_info['pos_error']['min'] = torch.min(pos_diff).item()
+        
+        return check_info
     
     def save(self, save_path):
         torch.save({
@@ -272,8 +300,44 @@ class DistillDatset:
             'distill_lr': self.distill_lr.detach().cpu()
             }, save_path)
         print(f"Distill dataset saved to {save_path}")
+    
+    @classmethod
+    def load(cls, load_path, device, pos_requires_grad=False, energy_requires_grad=False, force_requires_grad=False, lr_requires_grad=False, cluster_rate=0.5):
+        checkpoint = torch.load(load_path)
+        dataset = cls(
+            source_dataset=None,
+            distill_rate=1.0,  
+            distill_lr=checkpoint['distill_lr'], 
+            device=device,
+            pos_requires_grad=pos_requires_grad,
+            energy_requires_grad=energy_requires_grad,
+            force_requires_grad=force_requires_grad,
+            noise_pos=False
+        )
         
-    def molecular_clustering(self, num_clusters=1000):
+        dataset.z = checkpoint['z'].to(device)
+        dataset.pos = checkpoint['pos'].to(device)
+        dataset.y = checkpoint['y'].to(device)
+        dataset.force = checkpoint['force'].to(device)
+        dataset.distill_lr = checkpoint['distill_lr'].to(device)
+        dataset.size = len(dataset.y)
+        dataset.num_atom_per_molecule = dataset.pos.shape[0] // dataset.y.shape[0]
+        
+        dataset.pos.requires_grad_(pos_requires_grad)
+        dataset.y.requires_grad_(energy_requires_grad)
+        dataset.force.requires_grad_(force_requires_grad)
+        dataset.distill_lr.requires_grad_(lr_requires_grad)
+        dataset.num_atom_per_molecule = dataset.pos.shape[0] // dataset.y.shape[0]
+        
+        dataset.num_cluster = int(dataset.size * cluster_rate)
+        with torch.no_grad():
+            _, dataset.cz = dataset.molecular_clustering(dataset.num_cluster)
+            dataset.cz = torch.from_numpy(dataset.cz).long().to(device)
+        
+        print(f"Distill dataset loaded from {load_path}")
+        return dataset
+    
+    def molecular_clustering(self, num_clusters=500):
         """
         Clustering for molecular
         """
