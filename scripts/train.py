@@ -1,64 +1,137 @@
 import os
 import sys
-sys.path.append('.')
-import torch
+import yaml
+import argparse
 from datetime import datetime
+sys.path.append('.')
+import numpy as np
+import random
+import torch
 from utils.dataset import get_dataset, split_dataset
 from utils.net import get_network
 from utils.run.trainer import Trainer
+os.environ["WANDB_MODE"] = "offline"
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-data_cfg = {
-    "dataset": 'MD17', 
-    "root": 'data/MD17', 
-    "name": 'benzene', 
-    "train_ratio": 0.7, 
-    "valid_ratio": 0.1, 
-    "seed": 42
-}
-
-network_cfg ={
-    "name": 'schnet', 
-    'hidden_channels': 128,
-    'out_channels': 1,
-    'num_filters': 128,
-    'cutoff': 10.0,
-    'energy_and_force': False,
-    'num_layers': 6, 
-    'num_gaussians': 50
-}
-
-train_cfg = {
-    'project_name': 'MoleculeDynamics-Expert-Trajectory', 
-    'epochs': 500, 
-    'batch_size': 32, 
-    'vt_batch_size': 32, 
-    'optimizer_name': 'Adam', 
-    'weight_decay': 0, 
-    'save_step': 1, 
-    'lr': 5e-4, 
-    'scheduler_name': 'stepLR', 
-    'lr_decay_step_size': 50, 
-    'lr_decay_factor': 0.5, 
-    'energy_and_force': False, 
-    'p': 100, 
-    'save_dir': os.path.join('.log', network_cfg["name"], data_cfg["dataset"], '' if data_cfg["name"] is None else data_cfg["name"], datetime.now().strftime('%Y-%m-%d-%H-%M-%S'))
-}
-
-dataset = get_dataset(dataset='MD17', root='data/MD17', name='benzene')
-train_dataset, valid_dataset, test_dataset = split_dataset(dataset=dataset, train_ratio=0.7, valid_ratio=0.1, seed=42)
-network = get_network(name='schnet')
-trainer = Trainer()
-cfg = train_cfg.copy()
-cfg.update(network_cfg)
-cfg.update(data_cfg)
-
-trainer.train(
-    device=device, 
-    train_dataset=train_dataset, 
-    valid_dataset=valid_dataset, 
-    test_dataset=test_dataset, 
-    model=network, 
-    **cfg
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True 
+    
+    
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Training script with YAML configuration',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+    parser.add_argument(
+        '-c',
+        '--config',
+        type=str,
+        help='Path to the YAML configuration file'
+    )
+    
+    parser.add_argument(
+        '-d',
+        '--dataset_name',
+        type=str,
+        help='Dataset name to override config'
+    )
+    
+    parser.add_argument(
+        '-n',
+        '--name',
+        type=str,
+        help='Dataset subset name to override config'
+    )
+    
+    parser.add_argument(
+        '-s',
+        '--save_dir',
+        type=str,
+        help='Save directory'
+    )
+    
+    parser.add_argument(
+        '-e',
+        '--epochs',
+        type=int,
+        help='Train epoch'
+    )
+        
+    parser.add_argument(
+        '-w',
+        '--wandb_run_id',
+        type=str,
+        help='wandb run id for resume'
+    )
+    return parser.parse_args()
+
+def load_config(config_path, args):
+    try:
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        if args.dataset_name:
+            config['data_cfg']['dataset_name'] = args.dataset_name
+            
+        if args.name:
+            config['data_cfg']['name'] = args.name
+            
+        if args.epochs:
+            config['train_cfg']['epochs'] = args.epochs
+            
+        if args.save_dir:
+            config['train_cfg']['save_dir'] = args.save_dir
+        else:
+            config['train_cfg']['save_dir'] = os.path.join(
+                '.log', 
+                'eval', 
+                config['network_cfg']["name"],
+                config['data_cfg']["dataset_name"],
+                '' if config['data_cfg']["name"] is None else config['data_cfg']["name"],
+                datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+            )
+            os.makedirs(config['train_cfg']['save_dir'])
+        cfg_save_path = os.path.join(config['train_cfg']['save_dir'], 'config.yaml')
+        with open(cfg_save_path, 'w') as f:
+            yaml.safe_dump(config, f)
+            
+        return config
+    except Exception as e:
+        raise RuntimeError(f"Error loading config file: {str(e)}")
+
+def main():
+    args = parse_args()
+    config = load_config(args.config, args)
+    data_cfg, network_cfg, train_cfg = config['data_cfg'], config['network_cfg'], config['train_cfg']
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    set_seed(data_cfg['seed'])
+    
+    dataset = get_dataset(**data_cfg)
+    
+    train_dataset, valid_dataset, test_dataset = split_dataset(dataset=dataset, **data_cfg)
+    # for data in train_dataset:
+    #     print(f'y: {data.y}, pos: {data.pos}, force: {data.force}')
+    print(network_cfg)
+    network = get_network(**network_cfg)
+    
+    trainer = Trainer()
+    
+    cfg = train_cfg.copy()
+    cfg.update(config['network_cfg'])
+    cfg.update(config['data_cfg'])
+    trainer.train(
+        device=device,
+        train_dataset=train_dataset,
+        valid_dataset=valid_dataset,
+        test_dataset=test_dataset,
+        model=network,
+        wandb_run_id=args.wandb_run_id, 
+        **cfg
+    )
+
+if __name__ == "__main__":
+    main()

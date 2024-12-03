@@ -1,23 +1,26 @@
 distill_cfg:
   project_name: 'MoleculeDynamics-Data-Distill'
   algorithm: 'mtt'
-  num_iteration: 200
+  num_iteration: 1000
   num_step_per_iteration: 10
   all_distill_data_per_iteration: True
   noise_pos: False
   expert_network: 'SchNet'
   expert_trajectory_dir: '.ckpt/expert_trajectory/schnet/benzene'
-  max_start_iter: 10000
-  min_start_iter: 0
+  max_start_iter: 150000
+  min_start_iter: 100000
   num_expert: 2
   eval_step: 100
   eval_network_pool: ['SchNet']
-  eval_train_epoch: 10
+  eval_train_epoch: 100
   # eval_batch_size: 128
-  eval_scheduler_name: "ExpDecayLR"
+  # eval_scheduler_name: "ExpDecayLR"
   eval_vt_batch_size: 128
-  eval_lr_decay_factor: 0.95
-  eval_lr_decay_step_size: 100000
+  # eval_lr_decay_factor: 0.95
+  # eval_lr_decay_step_size: 100000
+  # eval_scheduler_name: None
+  # eval_lr_decay_factor: None
+  # eval_lr_decay_step_size: 100000
   save_step: 100
   distill_rate: 0.6
   # distill_batch: 16

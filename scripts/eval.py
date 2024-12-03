@@ -22,8 +22,8 @@ network = get_network(name='schnet', energy_and_force=True)
 # network.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-11-05-18-56-10/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])  # (0.54615, 3.68093)
 # network.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-11-06-00-27-15/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])  # (0.52049, 3.55423)
 # network.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-11-06-13-03-09/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])  # (0.38602, 2.98603)
-network.load_state_dict(torch.load('.log/data_distill/mtt/MD17/benzene/2024-12-02-16-08-21/eval/200/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])  # (146464.8125, 14.406352996826172)
-
+# network.load_state_dict(torch.load('.log/data_distill/mtt/MD17/benzene/2024-12-02-16-08-21/eval/200/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])  # (146464.8125, 14.406352996826172)
+network.load_state_dict(torch.load('.log/data_distill/mtt/MD17/benzene/2024-12-02-19-59-10/eval/200/best_valid_checkpoint.pt', map_location='cpu')['model_state_dict'])
 # network.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-12-02-11-28-35/checkpoint_epoch_20.pt', map_location='cpu')['model_state_dict'])  # (356.4842224121094, 82.54507446289062)
 
 

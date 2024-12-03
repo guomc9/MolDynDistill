@@ -1,7 +1,7 @@
 import sys
 sys.path.append('.')
 import torch
-from utils.dataset import get_dataset, split_dataset, DistillDatset
+from utils.dataset import get_dataset, split_dataset, DistillDataset
 from utils.net.schnet import SchNet
 from utils.distill.reparam_module import ReparamModule
 from torch.autograd import grad
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     molecular = 'benzene'
     dataset = get_dataset(dataset_name='MD17', root='data/MD17', name=molecular)
     train_dataset, valid_dataset, test_dataset = split_dataset(dataset=dataset, train_size=1000, valid_size=1000, seed=42)
-    distill_dataset = DistillDatset(source_dataset=valid_dataset, distill_rate=0.6, distill_lr=3.0e-10, device=device)
+    distill_dataset = DistillDataset(source_dataset=valid_dataset, distill_rate=0.6, distill_lr=3.0e-10, device=device)
     load_net = SchNet()
     # load_net.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-11-04-17-27-23/checkpoint_epoch_800.pt')['model_state_dict'])
     load_net.load_state_dict(torch.load('.log/expert_trajectory/schnet/MD17/benzene/2024-11-04-17-27-23/best_valid_checkpoint.pt')['model_state_dict'])

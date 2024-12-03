@@ -9,7 +9,7 @@ import wandb
 import re
 import random
 from .reparam_module import ReparamModule
-from ..dataset import DistillDatset
+from ..dataset import DistillDataset
 from ..net import get_network
 from ..run.trainer import Trainer
 from ..optimizers import get_dynamic_optimizer
@@ -34,9 +34,6 @@ class MTT:
         eval_train_epoch: int, 
         # eval_batch_size: int, 
         eval_vt_batch_size: int, 
-        eval_scheduler_name: str, 
-        eval_lr_decay_factor: float, 
-        eval_lr_decay_step_size: int, 
         save_step: int, 
         save_dir: str, 
         distill_rate: float, 
@@ -44,6 +41,9 @@ class MTT:
         eval_dataset, 
         device: str, 
         distill_batch: int, 
+        eval_scheduler_name: str = None, 
+        eval_lr_decay_factor: float = None, 
+        eval_lr_decay_step_size: int = None, 
         distill_lr_assistant_net: float = None, 
         distill_lr_lr: float = None, 
         distill_base_lr: float = 1.0e-4, 
@@ -98,7 +98,9 @@ class MTT:
         
         load_net = get_network(name=expert_network_name, return_assistant_net=False, **expert_network_dict)
         student_net = ReparamModule(student_net)
-        distill_dataset = DistillDatset(source_dataset=train_dataset, distill_rate=distill_rate, distill_lr=distill_base_lr, device=device, pos_requires_grad=pos_requires_grad or distill_energy_and_force, energy_requires_grad=energy_requires_grad, force_requires_grad=force_requires_grad, noise_pos=noise_pos)
+        distill_dataset = DistillDataset(source_dataset=train_dataset, distill_rate=distill_rate, distill_lr=distill_base_lr, device=device, pos_requires_grad=pos_requires_grad or distill_energy_and_force, energy_requires_grad=energy_requires_grad, force_requires_grad=force_requires_grad, noise_pos=noise_pos)
+
+        distill_dataset.save(os.path.join(save_dir, '0.pt'))
 
         # optimizers
         self.optimizer_pos = None

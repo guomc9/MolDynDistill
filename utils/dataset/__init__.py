@@ -138,22 +138,9 @@ class DistillData:
     def energy(self):
         return self._y
     
-    # def to_(self, device):
-    #     self.z = self.z.to(device)
-    #     self.pos = self.pos.to(device)
-    #     self._y = self._y.to(device)
-    #     self.force = self.force.to(device)
-
-    # def requires_grad_(self, requires: bool, enable_y: bool=False, enable_force: bool=False):
-    #     self.pos.requires_grad_(requires)
-    #     if enable_y:
-    #         self._y.requires_grad_(requires)
-    #     if enable_force:
-    #         self.force.requires_grad_(requires)
-        
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-class DistillDatset:
+class DistillDataset:
     def __init__(
         self, 
         source_dataset, 
@@ -164,7 +151,7 @@ class DistillDatset:
         pos_requires_grad=False, 
         energy_requires_grad=False, 
         force_requires_grad: bool=False, 
-        noise_pos: bool=True, 
+        noise_pos: bool=False, 
         ):
         if source_dataset is not None:
             self.source_size = len(source_dataset)
