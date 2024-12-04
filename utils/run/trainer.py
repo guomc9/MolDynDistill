@@ -99,7 +99,7 @@ class Trainer:
         valid_loader = DataLoader(valid_dataset, vt_batch_size, shuffle=False) if valid_dataset is not None else None
         test_loader = DataLoader(test_dataset, vt_batch_size, shuffle=False) if test_dataset is not None else None
         
-        print(f'len(train_loader): {len(train_loader)}')
+        # print(f'len(train_loader): {len(train_loader)}')
         
         self._save_checkpoint(save_dir, 'checkpoint_epoch_0.pt',
                                             model, optimizer, scheduler, None, None, 0, 0)
@@ -195,7 +195,7 @@ class Trainer:
             batch_data = batch_data.to(device)
             if energy_and_force:
                 batch_data.pos.requires_grad_(True)
-            print(f'pos: {batch_data.pos}, z: {batch_data.z}, energy: {batch_data.energy}, force: {batch_data.force}')
+            # print(f'pos: {batch_data.pos}, z: {batch_data.z}, energy: {batch_data.energy}, force: {batch_data.force}')
             
             if assistant_model is not None:
                 assistant_outs = assistant_model(batch_data)
@@ -210,21 +210,21 @@ class Trainer:
                 e_loss = loss_func(out, batch_data.y.unsqueeze(1))
                 f_loss = loss_func(force, batch_data.force)
                 loss = 1 / p * e_loss + f_loss
-                print(f'e_loss: {e_loss}, f_loss: {f_loss}')
+                # print(f'e_loss: {e_loss}, f_loss: {f_loss}')
             else:
                 loss = loss_func(out, batch_data.y.unsqueeze(1))
                 
             loss.backward()
-            all_grads = []
-            for param in model.parameters():
-                if param.grad is not None:
-                    all_grads.append(param.grad.view(-1))
-            if all_grads:
-                all_grads = torch.cat(all_grads)
-                print(f'max: {all_grads.max().item()}')
-                print(f'min: {all_grads.min().item()}')
-                print(f'mean: {all_grads.mean().item()}')
-            print(f'lr: {optimizer.param_groups[0]["lr"]}')
+            # all_grads = []
+            # for param in model.parameters():
+            #     if param.grad is not None:
+            #         all_grads.append(param.grad.view(-1))
+            # if all_grads:
+            #     all_grads = torch.cat(all_grads)
+            #     print(f'max: {all_grads.max().item()}')
+            #     print(f'min: {all_grads.min().item()}')
+            #     print(f'mean: {all_grads.mean().item()}')
+            # print(f'lr: {optimizer.param_groups[0]["lr"]}')
             
             # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()

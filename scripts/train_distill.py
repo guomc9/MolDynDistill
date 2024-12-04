@@ -19,7 +19,8 @@ def set_seed(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True  
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -92,9 +93,9 @@ def main():
     
     model = get_network(**network_cfg)
     # model.requires_grad_(True)
-    if os.path.join(args.distill_dir, 'eval_best_valid'):
+    if os.path.exists(os.path.join(args.distill_dir, 'eval_best_valid')):
         shutil.rmtree(os.path.join(args.distill_dir, 'eval_best_valid'))
-    os.makedirs(os.path.join(args.distill_dir, 'eval_best_valid'), exist_ok=True)
+    os.makedirs(os.path.join(args.distill_dir, 'eval_best_valid'))
     trainer = Trainer()
     trainer.train(
         device=device, 

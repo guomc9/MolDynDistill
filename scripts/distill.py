@@ -4,12 +4,22 @@ import yaml
 import argparse
 from datetime import datetime
 sys.path.append('.')
-
+import random
+import numpy as np
 import torch
 from utils.dataset import get_dataset, split_dataset
 from utils.distill import get_distill_algorithm
 os.environ["WANDB_MODE"] = "offline"
 
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Distillation script with YAML configuration',
@@ -81,6 +91,7 @@ def main():
     
     # Parse configurations
     distill_cfg, data_cfg, expert_network_cfg = config['distill_cfg'], config['data_cfg'], config['network_cfg']
+    set_seed(data_cfg['seed'])
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Load dataset and split into train/valid
