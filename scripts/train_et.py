@@ -2,6 +2,9 @@ import os
 import sys
 import yaml
 import argparse
+import random
+import numpy as np
+import torch_geometric as pyg
 from datetime import datetime
 sys.path.append('.')
 
@@ -10,7 +13,19 @@ from utils.dataset import get_dataset, split_dataset
 from utils.net import get_network
 from utils.run.trainer import Trainer
 os.environ["WANDB_MODE"] = "online"
+os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
 
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+    pyg.seed_everything(seed)
+    
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Training script with YAML configuration',
@@ -98,7 +113,7 @@ def main():
     config = load_config(args.config, args)
     data_cfg, network_cfg, train_cfg = config['data_cfg'], config['network_cfg'], config['train_cfg']
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
+    set_seed(data_cfg['seed'])
     dataset = get_dataset(**data_cfg)
     
     train_dataset, valid_dataset, test_dataset = split_dataset(dataset=dataset, **data_cfg)

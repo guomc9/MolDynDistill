@@ -9,11 +9,10 @@ distill_cfg:
   expert_trajectory_dir: '.ckpt/expert_trajectory/schnet/benzene'
   max_start_epoch: 50
   min_start_epoch: 0
-  num_expert_epoch: 3
+  num_expert_epoch: 2
   eval_step: 5000
   eval_network_pool: ['SchNet']
   eval_train_epoch: 1000
-  # eval_batch_size: 128
   eval_scheduler_name: "ExpDecayLR"
   eval_vt_batch_size: 128
   eval_lr_decay_factor: 0.95

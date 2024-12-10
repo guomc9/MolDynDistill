@@ -7,18 +7,19 @@ distill_cfg:
   noise_pos: False
   expert_network: 'SchNet'
   expert_trajectory_dir: '.ckpt/expert_trajectory/schnet/benzene'
-  max_start_iter: 50000
+  max_start_iter: 20000
   min_start_iter: 0
   num_expert: 2
   eval_step: 5
   eval_network_pool: ['SchNet']
-  eval_train_epoch: 50
+  eval_train_epoch: 20
   eval_vt_batch_size: 128
   eval_scheduler_name: None
   eval_lr_decay_factor: None
   eval_lr_decay_step_size: None
   save_step: 5
   distill_rate: 0.4
+  # distill_batch: 16
   distill_batch: 1
   distill_lr_lr: 1.0e-12
   enable_assistant_net: False

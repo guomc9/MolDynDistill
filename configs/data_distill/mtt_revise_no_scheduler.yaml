@@ -13,11 +13,10 @@ distill_cfg:
   eval_step: 2000
   eval_network_pool: ['SchNet']
   eval_train_epoch: 1000
-  # eval_batch_size: 128
-  eval_scheduler_name: "ExpDecayLR"
+  eval_scheduler_name: None
+  eval_lr_decay_factor: None
+  eval_lr_decay_step_size: None
   eval_vt_batch_size: 128
-  eval_lr_decay_factor: 0.95
-  eval_lr_decay_step_size: 100000
   save_step: 100
   distill_rate: 0.6
   distill_batch: 16

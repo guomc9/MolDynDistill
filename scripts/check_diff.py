@@ -29,9 +29,9 @@ def compare_datasets(path1, path2):
         diff = (tensor1 - tensor2).abs().float()
         
         print(f"{key:<10} {str(tensor1.shape):<15} "
-              f"{diff.max().item():>12.2e} "
-              f"{diff.min().item():>12.2e} "
-              f"{diff.mean().item():>12.2e}")
+              f"{diff.max().item():>12.10e} "
+              f"{diff.min().item():>12.10e} "
+              f"{diff.mean().item():>12.10e}")
         
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Compare two PyTorch saved files')

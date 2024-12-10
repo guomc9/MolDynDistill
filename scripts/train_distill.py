@@ -8,11 +8,13 @@ from utils.net import get_network
 import random
 import numpy as np
 import torch
+import torch_geometric as pyg
 from utils.dataset import get_dataset, split_dataset
 from utils.run.trainer import Trainer
 import shutil
 
 os.environ["WANDB_MODE"] = "offline"
+os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
 def set_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
@@ -21,6 +23,8 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+    pyg.seed_everything(seed)
     
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -51,7 +55,14 @@ def parse_args():
         default=None
     )
     
-        
+    parser.add_argument(
+        '-s', 
+        '--save_dir', 
+        type=str, 
+        help='save directory of model checkpoints', 
+        default=None
+    )
+       
     parser.add_argument(
         '-b',
         '--batch_size',
@@ -76,6 +87,7 @@ def main():
     batch_size = args.batch_size
     config_path = os.path.join(args.distill_dir, 'config.yaml')
     config = load_config(config_path)
+    save_dir = args.save_dir
     
     # Parse configurations
     distill_cfg, data_cfg, network_cfg = config['distill_cfg'], config['data_cfg'], config['network_cfg']
@@ -116,7 +128,7 @@ def main():
         # lr_decay_step_size=distill_cfg['eval_lr_decay_factor'], 
         energy_and_force=network_cfg['energy_and_force'], 
         p=distill_cfg['p'], 
-        save_dir=os.path.join(args.distill_dir, 'eval_best_valid'), 
+        save_dir=save_dir if save_dir is not None else os.path.join(args.distill_dir, 'eval_best_valid'), 
         project_name='MoleculeDynamics',
         val_step=1,
         test_step=10,

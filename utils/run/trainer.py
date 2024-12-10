@@ -94,22 +94,21 @@ class Trainer:
             else:
                 scheduler = None
         
-        # train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
-        train_loader = DataLoader(train_dataset, batch_size, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+        # train_loader = DataLoader(train_dataset, batch_size, shuffle=False)
         valid_loader = DataLoader(valid_dataset, vt_batch_size, shuffle=False) if valid_dataset is not None else None
         test_loader = DataLoader(test_dataset, vt_batch_size, shuffle=False) if test_dataset is not None else None
         
         # print(f'len(train_loader): {len(train_loader)}')
         
+        if save_dir and not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+            
         self._save_checkpoint(save_dir, 'checkpoint_epoch_0.pt',
                                             model, optimizer, scheduler, None, None, 0, 0)
         self._save_checkpoint(save_dir, 'checkpoint_iters_0.pt',
                                             model, optimizer, scheduler, None, None, 0, 0)
         
-        
-        if save_dir and not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-            
         if evaluation is None:
             evaluation = ThreeDEvaluator()
         
@@ -215,12 +214,12 @@ class Trainer:
                 loss = loss_func(out, batch_data.y.unsqueeze(1))
                 
             loss.backward()
-            # all_grads = []
-            # for param in model.parameters():
-            #     if param.grad is not None:
-            #         all_grads.append(param.grad.view(-1))
-            # if all_grads:
-            #     all_grads = torch.cat(all_grads)
+            all_grads = []
+            for param in model.parameters():
+                if param.grad is not None:
+                    all_grads.append(param.grad.view(-1))
+            if all_grads:
+                all_grads = torch.cat(all_grads)
             #     print(f'max: {all_grads.max().item()}')
             #     print(f'min: {all_grads.min().item()}')
             #     print(f'mean: {all_grads.mean().item()}')

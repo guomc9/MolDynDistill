@@ -10,6 +10,7 @@ import torch
 from utils.dataset import get_dataset, split_dataset
 from utils.distill import get_distill_algorithm
 os.environ["WANDB_MODE"] = "offline"
+os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
 
 def set_seed(seed: int):
     random.seed(seed)
@@ -19,6 +20,7 @@ def set_seed(seed: int):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
     
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -102,44 +104,6 @@ def main():
     expert_network_name = expert_network_cfg.pop('name')
     expert_network_cfg['num_clusters'] = distill_cfg.pop('num_clusters') if 'num_clusters' in distill_cfg.keys() else None
     distiller = get_distill_algorithm(algorithm=distill_cfg['algorithm'])
-    
-    # # Perform distillation
-    # distiller.distill(
-    #     project_name=distill_cfg['project_name'],
-    #     num_iteration=distill_cfg['num_iteration'],
-    #     num_step_per_iteration=distill_cfg['num_step_per_iteration'],
-    #     enable_assistant_net=distill_cfg['enable_assistant_net'], 
-    #     expert_network_name=expert_network_name, 
-    #     expert_network_dict=expert_network_cfg, 
-    #     expert_trajectory_dir=distill_cfg['expert_trajectory_dir'],
-    #     max_start_epoch=distill_cfg['max_start_epoch'],
-    #     num_expert_epoch=distill_cfg['num_expert_epoch'],
-    #     eval_step=distill_cfg['eval_step'],
-    #     eval_network_pool=distill_cfg['eval_network_pool'],
-    #     eval_train_epoch=distill_cfg['eval_train_epoch'],
-    #     eval_batch_size=distill_cfg['eval_batch_size'],
-    #     eval_vt_batch_size=distill_cfg['eval_vt_batch_size'],
-    #     eval_lr_decay_factor=distill_cfg['eval_lr_decay_factor'],
-    #     eval_lr_decay_step_size=distill_cfg['eval_lr_decay_step_size'],
-    #     eval_scheduler_name=distill_cfg['eval_scheduler_name'], 
-    #     save_step=distill_cfg['save_step'],
-    #     save_dir=distill_cfg['save_dir'],
-    #     distill_rate=distill_cfg['distill_rate'],
-    #     train_dataset=train_dataset,
-    #     eval_dataset=valid_dataset,
-    #     device=device,
-    #     distill_batch=distill_cfg['distill_batch'],
-    #     distill_lr_assistant_net=distill_cfg['distill_lr_assistant_net'],
-    #     distill_lr_lr=distill_cfg['distill_lr_lr'],
-    #     distill_base_lr=distill_cfg['distill_base_lr'],
-    #     distill_lr_pos=distill_cfg['distill_lr_pos'], 
-    #     distill_energy_and_force=distill_cfg['distill_energy_and_force'],
-    #     lr_requires_grad=distill_cfg['lr_requires_grad'], 
-    #     pos_requires_grad=distill_cfg['pos_requires_grad'], 
-    #     energy_requires_grad=distill_cfg['energy_requires_grad'],
-    #     force_requires_grad=distill_cfg['force_requires_grad'], 
-    #     p=distill_cfg['p']
-    # )
     
     # Perform distillation
     distiller.distill(

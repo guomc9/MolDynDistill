@@ -257,7 +257,7 @@ class MTT:
                             enable_log=False, 
                         )
                         if res < best_valid:
-                            best_valid = loss
+                            best_valid = res
                             print(f'Best loss at iteration {it}: {best_valid}')
                             distill_dataset.save(os.path.join(save_dir, 'best_valid.pt'))
 
