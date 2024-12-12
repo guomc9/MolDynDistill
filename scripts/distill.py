@@ -7,8 +7,10 @@ sys.path.append('.')
 import random
 import numpy as np
 import torch
+import torch_geometric as pyg
 from utils.dataset import get_dataset, split_dataset
 from utils.distill import get_distill_algorithm
+from functools import partial
 os.environ["WANDB_MODE"] = "offline"
 os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
 
@@ -21,6 +23,7 @@ def set_seed(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
+    pyg.seed_everything(seed)
     
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -94,6 +97,7 @@ def main():
     # Parse configurations
     distill_cfg, data_cfg, expert_network_cfg = config['distill_cfg'], config['data_cfg'], config['network_cfg']
     set_seed(data_cfg['seed'])
+    seed_hook = partial(set_seed, seed=data_cfg['seed'])
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Load dataset and split into train/valid
@@ -112,6 +116,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
         device=device,
+        eval_pre_hook=seed_hook, 
         **distill_cfg
     )
 

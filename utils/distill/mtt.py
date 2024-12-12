@@ -41,6 +41,7 @@ class MTT:
         eval_dataset, 
         device: str, 
         distill_batch: int, 
+        eval_pre_hook = None, 
         eval_scheduler_name: str = None, 
         eval_lr_decay_factor: float = None, 
         eval_lr_decay_step_size: int = None, 
@@ -228,7 +229,7 @@ class MTT:
                 dynamic_optimizer = get_dynamic_optimizer(optimizer_type=dynamic_optimizer_type, params=student_params_list[-1])
                 
                 # Evaluate
-                if it % eval_step == 0:
+                if it % eval_step == 0 or it == 1:
                     print(f'Evaluating Distill Dataset...')
                     os.makedirs(os.path.join(save_dir, 'eval', f'{it}'), exist_ok=True)
                     for name in eval_network_pool:
@@ -254,7 +255,9 @@ class MTT:
                             val_step=1, 
                             p=100, 
                             save_dir=os.path.join(save_dir, 'eval', f'{it}'), 
+                            early_epoch = -1,
                             enable_log=False, 
+                            seed_hook=eval_pre_hook, 
                         )
                         if res < best_valid:
                             best_valid = res

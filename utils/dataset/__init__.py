@@ -8,28 +8,78 @@ import torch
 from torch.utils.data import Subset
 import numpy as np
 
-def split_dataset(dataset, seed, train_ratio=0.1, valid_ratio=0.1, train_size=None, valid_size=None, **kwargs):
+# def split_dataset(dataset, seed, train_ratio=0.1, valid_ratio=0.1, train_size=None, valid_size=None, **kwargs):
+#     data_size = len(dataset)
+#     if train_size is None:
+#         assert train_ratio <= 1. and train_ratio > 0., f"train_ratio({train_ratio}) must be in (0, 1]."
+#         train_size = int(data_size * train_ratio)
+#     if valid_size is None:
+#         assert valid_ratio <= 1. and valid_ratio > 0., f"valid_ratio({valid_ratio}) must be in (0, 1]."
+#         valid_size = int(data_size * valid_ratio)
+#     # assert train_ratio + valid_ratio <= 1., f"train_ratio + valid_ratio({train_ratio} + {valid_ratio}) must be not greater than 1."
+    
+#     ids = np.arange(data_size)
+#     np.random.seed(seed)
+#     np.random.shuffle(ids)
+
+#     train_idx = ids[:train_size]
+#     val_idx = ids[train_size:train_size + valid_size]
+#     test_idx = ids[train_size + valid_size:]
+
+#     train_dataset = Subset(dataset, train_idx)
+#     valid_dataset = Subset(dataset, val_idx)
+#     test_dataset = Subset(dataset, test_idx)
+#     train_dataset, valid_dataset, test_dataset = dataset[train_idx], dataset[val_idx], dataset[test_idx]
+#     return train_dataset, valid_dataset, test_dataset
+
+def split_dataset(dataset, seed, train_ratio=0.1, valid_ratio=0.1, train_size=None, valid_size=None, shuffle=True, **kwargs):
+    """
+    Split a dataset into train, validation, and test subsets.
+
+    Args:
+        dataset: The dataset to be split.
+        seed: Random seed for reproducibility (used only when shuffle=True).
+        train_ratio: Proportion of the dataset to be used for training.
+        valid_ratio: Proportion of the dataset to be used for validation.
+        train_size: Absolute size of the training set (overrides train_ratio if provided).
+        valid_size: Absolute size of the validation set (overrides valid_ratio if provided).
+        shuffle: Whether to shuffle the dataset before splitting.
+        **kwargs: Additional arguments (unused).
+
+    Returns:
+        train_dataset, valid_dataset, test_dataset: The three subsets of the dataset.
+    """
     data_size = len(dataset)
+    
+    # Calculate train and validation sizes if not provided
     if train_size is None:
-        assert train_ratio <= 1. and train_ratio > 0., f"train_ratio({train_ratio}) must be in (0, 1]."
+        assert 0. < train_ratio <= 1., f"train_ratio({train_ratio}) must be in (0, 1]."
         train_size = int(data_size * train_ratio)
     if valid_size is None:
-        assert valid_ratio <= 1. and valid_ratio > 0., f"valid_ratio({valid_ratio}) must be in (0, 1]."
+        assert 0. < valid_ratio <= 1., f"valid_ratio({valid_ratio}) must be in (0, 1]."
         valid_size = int(data_size * valid_ratio)
-    # assert train_ratio + valid_ratio <= 1., f"train_ratio + valid_ratio({train_ratio} + {valid_ratio}) must be not greater than 1."
     
+    # Ensure train + valid does not exceed dataset size
+    assert train_size + valid_size <= data_size, (
+        f"train_size + valid_size ({train_size} + {valid_size}) must not exceed dataset size ({data_size})."
+    )
+    
+    # Generate indices
     ids = np.arange(data_size)
-    np.random.seed(seed)
-    np.random.shuffle(ids)
-
+    if shuffle:
+        np.random.seed(seed)
+        np.random.shuffle(ids)
+    
+    # Split indices
     train_idx = ids[:train_size]
     val_idx = ids[train_size:train_size + valid_size]
     test_idx = ids[train_size + valid_size:]
-
+    
+    # Create subsets
     train_dataset = Subset(dataset, train_idx)
     valid_dataset = Subset(dataset, val_idx)
     test_dataset = Subset(dataset, test_idx)
-    train_dataset, valid_dataset, test_dataset = dataset[train_idx], dataset[val_idx], dataset[test_idx]
+    
     return train_dataset, valid_dataset, test_dataset
 
 

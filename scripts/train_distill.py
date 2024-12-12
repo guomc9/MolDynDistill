@@ -11,6 +11,7 @@ import torch
 import torch_geometric as pyg
 from utils.dataset import get_dataset, split_dataset
 from utils.run.trainer import Trainer
+from functools import partial
 import shutil
 
 os.environ["WANDB_MODE"] = "offline"
@@ -71,6 +72,13 @@ def parse_args():
         default=None
     )
     
+    parser.add_argument(
+        '--no_scheduler',
+        type=bool, 
+        help='no scheduler', 
+        default=False
+    )
+    
     return parser.parse_args()
 
 def load_config(config_path):
@@ -92,6 +100,7 @@ def main():
     # Parse configurations
     distill_cfg, data_cfg, network_cfg = config['distill_cfg'], config['data_cfg'], config['network_cfg']
     set_seed(data_cfg['seed'])
+    seed_hook = partial(set_seed, seed=data_cfg['seed'])
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Load dataset and split into train/valid
@@ -122,10 +131,9 @@ def main():
         vt_batch_size=distill_cfg['eval_vt_batch_size'], 
         optimizer_name=distill_cfg['dynamic_optimizer_type'], 
         lr=distill_dataset.get_lr(detach=True), 
-        # lr=1e-9, 
-        # scheduler_name=distill_cfg['eval_scheduler_name'], 
-        # lr_decay_factor=distill_cfg['eval_lr_decay_factor'],
-        # lr_decay_step_size=distill_cfg['eval_lr_decay_factor'], 
+        scheduler_name=distill_cfg['eval_scheduler_name'] if not args.no_scheduler else None, 
+        lr_decay_factor=distill_cfg['eval_lr_decay_factor'] if not args.no_scheduler else None, 
+        lr_decay_step_size=distill_cfg['eval_lr_decay_step_size'] if not args.no_scheduler else None, 
         energy_and_force=network_cfg['energy_and_force'], 
         p=distill_cfg['p'], 
         save_dir=save_dir if save_dir is not None else os.path.join(args.distill_dir, 'eval_best_valid'), 
@@ -136,6 +144,8 @@ def main():
         early_epoch=-1, 
         early_save_iters = 50,
         enable_log=True, 
+        seed_hook=seed_hook, 
+        
     )
     
 if __name__ == "__main__":

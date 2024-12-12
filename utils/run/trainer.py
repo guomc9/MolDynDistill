@@ -27,7 +27,7 @@ class Trainer:
               lr_decay_step_size=50, weight_decay=0,
               energy_and_force=False, p=100, save_dir='',
               project_name='3DGN-Training', val_step=10, test_step=10, save_step=50, early_epoch=10, early_save_iters=50, 
-              enable_log=True, wandb_run_id=None, **kwargs):
+              enable_log=True, wandb_run_id=None, seed_hook=None, **kwargs):
         """
         Main training loop with wandb integration
         
@@ -93,9 +93,11 @@ class Trainer:
                 scheduler = LambdaLR(optimizer, lr_lambda=decay_lambda)
             else:
                 scheduler = None
-        
-        train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
-        # train_loader = DataLoader(train_dataset, batch_size, shuffle=False)
+        if seed_hook is not None:
+            seed_hook()
+            train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+        else:
+            train_loader = DataLoader(train_dataset, batch_size, shuffle=False)
         valid_loader = DataLoader(valid_dataset, vt_batch_size, shuffle=False) if valid_dataset is not None else None
         test_loader = DataLoader(test_dataset, vt_batch_size, shuffle=False) if test_dataset is not None else None
         
@@ -133,7 +135,7 @@ class Trainer:
             print('\nTraining...', flush=True)
             train_err = self._train_epoch(model, assistant_model, optimizer, scheduler, train_loader, 
                                         energy_and_force, p, loss_func, epoch, early_epoch, early_save_iters, device, save_dir)
-            print({'train_err': train_err})
+            print({'train_err': train_err, 'lr': optimizer.param_groups[0]['lr']})
             if enable_log:
                 wandb.log({'train_err': train_err, 'lr': optimizer.param_groups[0]['lr']}, step=epoch)
 
@@ -304,7 +306,7 @@ class Trainer:
             checkpoint['scheduler_state_dict'] = scheduler.state_dict()
             
         torch.save(checkpoint, os.path.join(save_dir, filename))
-        print(f'Saved checkpoint to {filename}')
+        print(f'Saved checkpoint to {os.path.join(save_dir, filename)}')
         
     def _load_checkpoint(self, checkpoint_path, model, optimizer, scheduler):
         """Load model checkpoint."""
