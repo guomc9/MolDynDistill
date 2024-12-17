@@ -24,6 +24,16 @@ def set_seed(seed: int):
     torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
     pyg.seed_everything(seed)
+
+
+    
+def unset_seed():
+    random.seed(None)
+    np.random.seed(None)
+    torch.seed()
+    torch.cuda.seed()
+    torch.cuda.seed_all()
+
     
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -98,6 +108,8 @@ def main():
     distill_cfg, data_cfg, expert_network_cfg = config['distill_cfg'], config['data_cfg'], config['network_cfg']
     set_seed(data_cfg['seed'])
     seed_hook = partial(set_seed, seed=data_cfg['seed'])
+    unseed_hook = unset_seed
+    
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
     # Load dataset and split into train/valid
@@ -116,7 +128,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
         device=device,
-        eval_pre_hook=seed_hook, 
+        seed_hook=seed_hook, 
         **distill_cfg
     )
 

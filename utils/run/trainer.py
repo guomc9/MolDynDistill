@@ -179,7 +179,7 @@ class Trainer:
         if enable_log:
             wandb.finish()
         
-        return self.best_valid
+        return self.best_valid, self.best_valid_energy, self.best_valid_force
         
     def _train_epoch(self, model, assistant_model, optimizer, scheduler, train_loader, 
                      energy_and_force, p, loss_func, epoch, early_epoch, early_save_iters, device, save_dir):

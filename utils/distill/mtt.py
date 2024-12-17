@@ -8,6 +8,7 @@ from tqdm import tqdm, trange
 import wandb
 import re
 import random
+import copy
 from .reparam_module import ReparamModule
 from ..dataset import DistillDataset
 from ..net import get_network
@@ -32,7 +33,6 @@ class MTT:
         eval_step: int, 
         eval_network_pool: list, 
         eval_train_epoch: int, 
-        # eval_batch_size: int, 
         eval_vt_batch_size: int, 
         save_step: int, 
         save_dir: str, 
@@ -41,7 +41,8 @@ class MTT:
         eval_dataset, 
         device: str, 
         distill_batch: int, 
-        eval_pre_hook = None, 
+        seed_hook = None, 
+        unseed_hook = None, 
         eval_scheduler_name: str = None, 
         eval_lr_decay_factor: float = None, 
         eval_lr_decay_step_size: int = None, 
@@ -69,6 +70,7 @@ class MTT:
         enable_log: bool = True, 
         revise_energy_and_force: bool = True, 
         check_energy_and_force: bool = True, 
+        shuffle_distill: bool = False, 
         **kwargs
     ):
         if enable_log:
@@ -88,6 +90,8 @@ class MTT:
             os.makedirs(save_dir)
         
         best_valid = float('inf')
+        best_valid_energy = float('inf')
+        best_valid_force = float('inf')
         if enable_assistant_net:
             student_net, assistant_net = get_network(name=expert_network_name, return_assistant_net=True, **expert_network_dict)
             student_net = student_net.to(device)
@@ -208,6 +212,8 @@ class MTT:
                 if self.optimizer_energy is not None:
                     self.optimizer_energy.zero_grad()
                 filtered_expert_iter_list = [(i, it) for i, it in enumerate(expert_iter_list) if min_start_iter <= it < max_start_iter]
+                if unseed_hook is not None:
+                    unseed_hook()
                 start_i, start_it = random.choice(filtered_expert_iter_list)
                 end_it = expert_iter_list[start_i + num_expert]
                 print(f'start_it -> end_it: {start_it}->{end_it}')
@@ -233,13 +239,15 @@ class MTT:
                     print(f'Evaluating Distill Dataset...')
                     os.makedirs(os.path.join(save_dir, 'eval', f'{it}'), exist_ok=True)
                     for name in eval_network_pool:
+                        seed_hook()
+                        init_net = get_network(name=name, **expert_network_dict)
                         eval_trainer = Trainer()
                         res = eval_trainer.train(
                             device=device, 
                             train_dataset=distill_dataset.to_torch(), 
                             valid_dataset=eval_dataset, 
                             test_dataset=None, 
-                            model=get_network(name=name, **expert_network_dict), 
+                            model=init_net, 
                             assistant_model=assistant_net, 
                             loss_func=torch.nn.MSELoss(), 
                             evaluation=None, 
@@ -257,15 +265,17 @@ class MTT:
                             save_dir=os.path.join(save_dir, 'eval', f'{it}'), 
                             early_epoch = -1,
                             enable_log=False, 
-                            seed_hook=eval_pre_hook, 
+                            seed_hook=seed_hook, 
                         )
-                        if res < best_valid:
-                            best_valid = res
+                        if res[0] < best_valid:
+                            best_valid = res[0]
+                            best_valid_energy = res[1]
+                            best_valid_force = res[2]
                             print(f'Best loss at iteration {it}: {best_valid}')
                             distill_dataset.save(os.path.join(save_dir, 'best_valid.pt'))
 
                         if enable_log:
-                            wandb.log({"distill/best_valid": best_valid}, step=it)
+                            wandb.log({"distill/best_valid": best_valid, 'distill/best_vaild_energy': best_valid_energy,'distill/best_vaild_force': best_valid_force}, step=it)
 
                 # Save
                 if it % save_step == 0:
@@ -277,20 +287,42 @@ class MTT:
                 student_net.train()
                 if assistant_net is not None:
                     assistant_net.train()
-                
+                    
                 num_params = sum([np.prod(param.size()) for param in (student_net.parameters())])
+                # if all_distill_data_per_iteration:
+                #     num_step_per_iteration = (len(distill_dataset) + distill_batch - 1) // distill_batch
+                # for step in trange(num_step_per_iteration):
+                #     if all_distill_data_per_iteration:
+                #         indices = torch.arange(step * distill_batch, (step + 1) * distill_batch if (step + 1) * distill_batch < len(distill_dataset) else len(distill_dataset), device=device, dtype=torch.long)
+                #     else:
+                #         begin = random.randint(0, len(distill_dataset) - distill_batch)
+                #         indices = torch.arange(begin, begin+distill_batch, device=device)
+                
                 if all_distill_data_per_iteration:
                     num_step_per_iteration = (len(distill_dataset) + distill_batch - 1) // distill_batch
+                    all_indices = [
+                        torch.arange(
+                            step * distill_batch,
+                            (step + 1) * distill_batch if (step + 1) * distill_batch < len(distill_dataset) else len(distill_dataset),
+                            device=device,
+                            dtype=torch.long
+                        )
+                        for step in range(num_step_per_iteration)
+                    ]
+                    
+                    if shuffle_distill:
+                        random.shuffle(all_indices)
+                else:
+                    all_indices = None
+
                 for step in trange(num_step_per_iteration):
                     if all_distill_data_per_iteration:
-                        indices = torch.arange(step * distill_batch, (step + 1) * distill_batch if (step + 1) * distill_batch < len(distill_dataset) else len(distill_dataset), device=device, dtype=torch.long)
+                        indices = all_indices[step]
                     else:
                         begin = random.randint(0, len(distill_dataset) - distill_batch)
-                        indices = torch.arange(begin, begin+distill_batch, device=device)
+                        indices = torch.arange(begin, begin + distill_batch, device=device)
+                        
                     batch_data = distill_dataset.get_batch(indices)
-                    # print("Pos requires_grad:", distill_dataset.pos.requires_grad)
-                    # print("Batch pos requires_grad:", batch_data.pos.requires_grad)
-                    # print("Batch pos grad_fn:", batch_data.pos.grad_fn)
                     if distill_energy_and_force:
                         batch_data.pos.requires_grad_(True)
                     if assistant_net is not None:

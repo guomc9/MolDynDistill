@@ -3,3 +3,4 @@ wandb
 __pycache__
 .debug*
 data/MD17/*
+tmp

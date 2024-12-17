@@ -105,13 +105,13 @@ def main():
     
     # Load dataset and split into train/valid
     dataset = get_dataset(**data_cfg)
-    train_dataset, valid_dataset, _ = split_dataset(dataset=dataset, **data_cfg)
+    _, valid_dataset, _ = split_dataset(dataset=dataset, **data_cfg)
     
     if args.ckpt_id is None:
         distill_dataset = DistillDataset.load(load_path=os.path.join(distill_cfg['save_dir'], 'best_valid.pt'), device=device)
     else:
         distill_dataset = DistillDataset.load(load_path=os.path.join(distill_cfg['save_dir'], f'{args.ckpt_id}.pt'), device=device)
-    
+    seed_hook()
     model = get_network(**network_cfg)
     # model.requires_grad_(True)
     if os.path.exists(os.path.join(args.distill_dir, 'eval_best_valid')):
@@ -121,7 +121,6 @@ def main():
     trainer.train(
         device=device, 
         train_dataset=distill_dataset.to_torch(), 
-        # train_dataset=train_dataset, 
         valid_dataset=valid_dataset, 
         test_dataset=None, 
         model=model, 
@@ -145,7 +144,6 @@ def main():
         early_save_iters = 50,
         enable_log=True, 
         seed_hook=seed_hook, 
-        
     )
     
 if __name__ == "__main__":
