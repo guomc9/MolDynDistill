@@ -404,3 +404,29 @@ class DistillDataset:
     
     def get_source_size(self):
         return self.source_size
+    
+
+from torch_geometric.data import Data
+from torch.utils.data import Dataset
+class PruneDataset(Dataset):
+    def __init__(self, data_list):
+        self.data_list = self._convert_to_pyg_data(data_list)
+
+    def _convert_to_pyg_data(self, data_list):
+        pyg_data_list = []
+        for data in data_list:
+            pyg_data = Data(
+                z=data.z if hasattr(data, 'z') else None, 
+                pos=data.pos if hasattr(data, 'pos') else None, 
+                y=data.y if hasattr(data, 'y') else None, 
+                force=data.force if hasattr(data, 'force') else None, 
+                energy=data.force if hasattr(data, 'energy') else None
+            )
+            pyg_data_list.append(pyg_data)
+        return pyg_data_list
+
+    def __len__(self):
+        return len(self.data_list)
+
+    def __getitem__(self, idx):
+        return self.data_list[idx]

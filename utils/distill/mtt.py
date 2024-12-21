@@ -8,7 +8,6 @@ from tqdm import tqdm, trange
 import wandb
 import re
 import random
-import copy
 from .reparam_module import ReparamModule
 from ..dataset import DistillDataset
 from ..net import get_network

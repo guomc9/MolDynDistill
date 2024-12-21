@@ -1,7 +1,7 @@
 distill_cfg:
   project_name: 'MoleculeDynamics-Data-Distill'
   algorithm: 'mtt'
-  num_iteration: 100
+  num_iteration: 500
   num_step_per_iteration: 16
   all_distill_data_per_iteration: True
   noise_pos: False

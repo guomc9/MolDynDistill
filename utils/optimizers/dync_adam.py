@@ -1,7 +1,7 @@
 import torch
 
 class DyncAdam:
-    def __init__(self, params, betas=(0.9, 0.999), eps=1e-8, t=0, **kwargs):
+    def __init__(self, params, betas=(0.9, 0.999), eps=1e-8, t=0, m=None, v=None, **kwargs):
         if not isinstance(params, torch.Tensor):
             raise TypeError("params must be a single torch.Tensor")
 
@@ -10,8 +10,8 @@ class DyncAdam:
         self.beta2 = betas[1]
         self.eps = eps
 
-        self.m = torch.zeros_like(params)
-        self.v = torch.zeros_like(params)
+        self.m = torch.zeros_like(params) if m is None or not isinstance(m, torch.Tensor) else m
+        self.v = torch.zeros_like(params) if v is None or not isinstance(v, torch.Tensor) else v
 
         self.t = t
 
@@ -28,9 +28,5 @@ class DyncAdam:
 
         m_hat = self.m / (1 - self.beta1 ** self.t)
         v_hat = self.v / (1 - self.beta2 ** self.t)
-        print(f't: {self.t}, adam fix scale: {(m_hat / (torch.sqrt(v_hat) + self.eps)).abs().max()}')
-        # updated_params = params.clone()
-        # updated_params -= lr * m_hat / (torch.sqrt(v_hat) + self.eps)
         
-        # return updated_params
         return params - lr * m_hat / (torch.sqrt(v_hat) + self.eps)
