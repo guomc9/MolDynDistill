@@ -195,7 +195,7 @@ class MTT:
         if revise_energy_and_force or check_energy_and_force:
             best_expert_net = get_network(name=expert_network_name, return_assistant_net=False, **expert_network_dict)
             best_expert_net.load_state_dict(torch.load(os.path.join(expert_trajectory_dir, 'best_valid_checkpoint.pt'))['model_state_dict'])
-            best_expert_net.to(device)
+            best_expert_net = best_expert_net.to(device)
         
         param_loss_list = []
         with tqdm(range(1, num_iteration+1)) as pbar:
@@ -230,15 +230,35 @@ class MTT:
                     target_expert_params.append(param.data.reshape(-1))
                 target_expert_params = torch.cat(target_expert_params, dim=0).to(device)
                 
+                start_opt_params_dict = {'t': None, 'm': None, 'v':None, 'betas': None, 'eps': None}
+                optimizer_state_dict = torch.load(expert_file_list[start_it])['optimizer_state_dict']
+                if dynamic_optimizer_type == 'adam':
+                    betas = optimizer_state_dict['param_groups'][0]['betas']
+                    eps = optimizer_state_dict['param_groups'][0]['eps']
+                    states = optimizer_state_dict['state']
+                    if states[0]['step'] is not None and states[0]['exp_avg'] is not None and states[0]['exp_avg_sq'] is not None:
+                        start_opt_params_dict['t'] = states[0]['step']
+                        start_opt_params_dict['m'] = []
+                        start_opt_params_dict['v'] = []
+                        start_opt_params_dict['betas'] = betas
+                        start_opt_params_dict['eps'] = eps                        
+                        for i, state in enumerate(states.items()):
+                            start_opt_params_dict['m'].append(state[1]['exp_avg'].flatten())
+                            start_opt_params_dict['v'].append(state[1]['exp_avg_sq'].flatten())
+                        start_opt_params_dict['m'] = torch.concat(start_opt_params_dict['m'])
+                        start_opt_params_dict['v'] = torch.concat(start_opt_params_dict['v'])
+                
                 student_params_list = [start_expert_params.detach().clone().requires_grad_(True)]
-                dynamic_optimizer = get_dynamic_optimizer(optimizer_type=dynamic_optimizer_type, params=student_params_list[-1])
+                dynamic_optimizer = get_dynamic_optimizer(optimizer_type=dynamic_optimizer_type, params=student_params_list[-1], **start_opt_params_dict)
                 
                 # Evaluate
-                if it % eval_step == 0 or it == 1:
+                # if it % eval_step == 0 or it == 1:
+                if it % eval_step == 0:
                     print(f'Evaluating Distill Dataset...')
                     os.makedirs(os.path.join(save_dir, 'eval', f'{it}'), exist_ok=True)
                     for name in eval_network_pool:
-                        seed_hook()
+                        if seed_hook is not None:
+                            seed_hook()
                         init_net = get_network(name=name, **expert_network_dict)
                         eval_trainer = Trainer()
                         res = eval_trainer.train(
@@ -288,15 +308,6 @@ class MTT:
                     assistant_net.train()
                     
                 num_params = sum([np.prod(param.size()) for param in (student_net.parameters())])
-                # if all_distill_data_per_iteration:
-                #     num_step_per_iteration = (len(distill_dataset) + distill_batch - 1) // distill_batch
-                # for step in trange(num_step_per_iteration):
-                #     if all_distill_data_per_iteration:
-                #         indices = torch.arange(step * distill_batch, (step + 1) * distill_batch if (step + 1) * distill_batch < len(distill_dataset) else len(distill_dataset), device=device, dtype=torch.long)
-                #     else:
-                #         begin = random.randint(0, len(distill_dataset) - distill_batch)
-                #         indices = torch.arange(begin, begin+distill_batch, device=device)
-                
                 if all_distill_data_per_iteration:
                     num_step_per_iteration = (len(distill_dataset) + distill_batch - 1) // distill_batch
                     all_indices = [
@@ -310,6 +321,8 @@ class MTT:
                     ]
                     
                     if shuffle_distill:
+                        if unseed_hook is not None:
+                            unseed_hook()
                         random.shuffle(all_indices)
                 else:
                     all_indices = None

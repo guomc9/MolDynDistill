@@ -129,6 +129,7 @@ def main():
         eval_dataset=valid_dataset,
         device=device,
         seed_hook=seed_hook, 
+        unseed_hook=unseed_hook, 
         **distill_cfg
     )
 

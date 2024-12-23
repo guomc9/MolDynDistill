@@ -25,7 +25,7 @@ train_cfg:
   val_step: 1
   test_step: 10000000
   save_step: 1
-  early_epoch: 200
+  early_epoch: 1000
   early_save_iters: 250
 
   lr: 1.0e-9

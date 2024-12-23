@@ -25,6 +25,8 @@ train_cfg:
   val_step: 1
   test_step: 10000000
   save_step: 1
+  early_epoch: 1000
+  early_save_iters: 250
   lr: 1.0e-4
   scheduler_name: ExpDecayLR
   lr_decay_step_size: 8000
