@@ -230,18 +230,22 @@ class MTT:
                     target_expert_params.append(param.data.reshape(-1))
                 target_expert_params = torch.cat(target_expert_params, dim=0).to(device)
                 
-                start_opt_params_dict = {'t': None, 'm': None, 'v':None, 'betas': None, 'eps': None}
+                start_opt_params_dict = {'t': None, 'm': None, 'v':None, 'betas': None, 'eps': None, 'lr': None}
+                # end_opt_params_dict = {'t': None, 'm': None, 'v':None, 'betas': None, 'eps': None, 'lr': None}
+                
                 optimizer_state_dict = torch.load(expert_file_list[start_it])['optimizer_state_dict']
                 if dynamic_optimizer_type == 'adam':
                     betas = optimizer_state_dict['param_groups'][0]['betas']
                     eps = optimizer_state_dict['param_groups'][0]['eps']
+                    lr = optimizer_state_dict['param_groups'][0]['lr']
                     states = optimizer_state_dict['state']
                     if states[0]['step'] is not None and states[0]['exp_avg'] is not None and states[0]['exp_avg_sq'] is not None:
                         start_opt_params_dict['t'] = states[0]['step']
                         start_opt_params_dict['m'] = []
                         start_opt_params_dict['v'] = []
                         start_opt_params_dict['betas'] = betas
-                        start_opt_params_dict['eps'] = eps                        
+                        start_opt_params_dict['eps'] = eps
+                        start_opt_params_dict['lr'] = lr
                         for i, state in enumerate(states.items()):
                             start_opt_params_dict['m'].append(state[1]['exp_avg'].flatten())
                             start_opt_params_dict['v'].append(state[1]['exp_avg_sq'].flatten())
@@ -252,8 +256,8 @@ class MTT:
                 dynamic_optimizer = get_dynamic_optimizer(optimizer_type=dynamic_optimizer_type, params=student_params_list[-1], **start_opt_params_dict)
                 
                 # Evaluate
-                # if it % eval_step == 0 or it == 1:
-                if it % eval_step == 0:
+                if it % eval_step == 0 or it == 1:
+                # if it % eval_step == 0:
                     print(f'Evaluating Distill Dataset...')
                     os.makedirs(os.path.join(save_dir, 'eval', f'{it}'), exist_ok=True)
                     for name in eval_network_pool:
@@ -353,7 +357,7 @@ class MTT:
                     grad = torch.autograd.grad(loss, student_params_list[-1], create_graph=True, retain_graph=True)[0]
                     if torch.isnan(grad).sum().item() > 0:
                         print(f'nan values exist in dynamic grad.')
-                    student_params_list.append(dynamic_optimizer.step(student_params_list[-1], grad, distill_dataset.get_lr()))
+                    student_params_list.append(dynamic_optimizer.step(params=student_params_list[-1], grad=grad, lr=distill_dataset.get_lr() if self.optimizer_lr is not None else None))
                 
                 param_loss = torch.tensor(0.0).to(device)
                 param_dist = torch.tensor(0.0).to(device)

@@ -12,7 +12,7 @@ import torch
 from utils.dataset import get_dataset, split_dataset
 from utils.net import get_network
 from utils.run.trainer import Trainer
-os.environ["WANDB_MODE"] = "online"
+os.environ["WANDB_MODE"] = "offline"
 os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
 
 def set_seed(seed: int):

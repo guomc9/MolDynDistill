@@ -5,7 +5,7 @@ data_cfg:
   train_size: 1000
   valid_size: 1000
   seed: 42
-  shuffle: true
+  shuffle: False
 
 network_cfg:
   name: schnet

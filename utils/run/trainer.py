@@ -26,7 +26,7 @@ class Trainer:
               scheduler_name=None, lr_decay_factor=0.5, 
               lr_decay_step_size=50, weight_decay=0,
               energy_and_force=False, p=100, save_dir='',
-              project_name='3DGN-Training', val_step=10, test_step=10, save_step=50, early_epoch=10, early_save_iters=50, 
+              project_name='3DGN-Training', val_step=10, test_step=10, save_step=50, early_epoch=10, early_save_iters=50, shuffle=False, 
               enable_log=True, wandb_run_id=None, seed_hook=None, **kwargs):
         """
         Main training loop with wandb integration
@@ -95,7 +95,8 @@ class Trainer:
                 scheduler = None
         if seed_hook is not None:
             seed_hook()
-            train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+            # train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+            train_loader = DataLoader(train_dataset, batch_size, shuffle=shuffle)
         else:
             train_loader = DataLoader(train_dataset, batch_size, shuffle=False)
         valid_loader = DataLoader(valid_dataset, vt_batch_size, shuffle=False) if valid_dataset is not None else None
@@ -298,6 +299,8 @@ class Trainer:
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'best_valid_mae': self.best_valid, 
+            'best_valid_force_mae': self.best_valid_force, 
+            'best_valid_energy_mae': self.best_valid_energy, 
             'train_err': train_err, 
             'valid_err': valid_err
         }

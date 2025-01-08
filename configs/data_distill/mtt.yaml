@@ -1,37 +1,36 @@
 distill_cfg:
-  project_name: 'MoleculeDynamics-Data-Distill'
-  algorithm: 'mtt'
-  num_iteration: 100
+  project_name: "MoleculeDynamics-Data-Distill"
+  algorithm: "mtt"
+  num_iteration: 200
   num_step_per_iteration: 16
   all_distill_data_per_iteration: True
   noise_pos: False
-  expert_network: 'SchNet'
-  expert_trajectory_dir: '.ckpt/expert_trajectory/schnet/benzene'
-  max_start_iter: 1000000
+  expert_network: "SchNet"
+  expert_trajectory_dir: ".ckpt/expert_trajectory/schnet/benzene"
+  max_start_iter: 3000000
   min_start_iter: 0
   num_expert: 2
   shuffle_distill: True
-  eval_step: 50
-  eval_network_pool: ['SchNet']
-  eval_train_epoch: 1000
+  eval_step: 25
+  eval_network_pool: ["SchNet"]
+  eval_train_epoch: 3000
   eval_scheduler_name: "ExpDecayLR"
   eval_vt_batch_size: 128
   eval_lr_decay_factor: 0.95
-  eval_lr_decay_step_size: 100000
-  save_step: 50
+  eval_lr_decay_step_size: 8000
+  save_step: 25
   distill_rate: 0.4
   distill_batch: 1
   enable_assistant_net: False
-  distill_lr_lr: 5.0e-12
-  distill_base_lr: 1.0e-9
+  distill_base_lr: 1.0e-4
   distill_energy_and_force: True
   dynamic_optimizer_type: "adam"
   distill_optimizer_type: "adam"
   distill_scheduler_type: "step"
   distill_scheduler_decay_step: 2000
   distill_scheduler_decay_rate: 0.5
-  distill_lr_pos: 1.0e-3
-  lr_requires_grad: True
+  distill_lr_pos: 1.0e-4
+  lr_requires_grad: False
   pos_requires_grad: True
   energy_requires_grad: False
   force_requires_grad: False
