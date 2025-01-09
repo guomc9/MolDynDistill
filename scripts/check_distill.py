@@ -82,7 +82,7 @@ def plot_metrics_and_save(checkpoints_dirs, base_dir, y_min, y_max):
         y_min (float): Minimum value of the y-axis.
         y_max (float): Maximum value of the y-axis.
     """
-    colors = ["b", "g", "r", "c", "m", "y", "k"]  # Colors for different directories
+    colors = ["b", "g", "r", "c", "m", "y", "k", "orange", "purple", "pink"]
     labels = ["best_valid_mae", "best_valid_force_mae", "best_valid_energy_mae"]
     png_filenames = ["best_valid_mae.png", "best_valid_force_mae.png", "best_valid_energy_mae.png"]
 
