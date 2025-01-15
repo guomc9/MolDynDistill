@@ -140,7 +140,7 @@ def get_dataset(dataset_name: str, root: str, name: str = None, **kwargs):
 from torch.utils.data import Dataset as TorchDataset
 from torch_geometric.data import Data as PygData
 class TorchDistillDataset(TorchDataset):
-    def __init__(self, z, pos, y, force, cz, num_atom_per_molecule):
+    def __init__(self, z, pos, y, force, num_atom_per_molecule):
         self.data_list = []
         begin = 0
         for i in range(len(y)):
@@ -151,8 +151,7 @@ class TorchDistillDataset(TorchDataset):
                     pos=pos[begin:end], 
                     y=y[i], 
                     energy=y[i], 
-                    force=force[begin:end], 
-                    cz=cz[begin:end]
+                    force=force[begin:end]
                     )
                 )
             begin = end
@@ -167,14 +166,12 @@ class DistillData:
     def __init__(
         self, 
         z: torch.LongTensor, 
-        cz: torch.LongTensor, 
         pos: torch.FloatTensor,
         y: torch.FloatTensor,
         force: torch.FloatTensor, 
         batch: torch.LongTensor
     ):
         self.z = z
-        self.cz = cz
         self.pos = pos
         self._y = y
         self.force = force
@@ -209,21 +206,31 @@ class DistillDataset:
             self.size = int(self.source_size * distill_rate)
             self.distill_lr = torch.tensor(distill_lr, device=device, requires_grad=True)
             self.enable_cluster = enable_cluster
-
+            self.source_pos = []
+            self.source_y = []
+            self.source_force = []
+            for data in self.source_dataset:
+                self.source_pos.append(data.pos)
+                self.source_y.append(data.y)
+                self.source_force.append(data.force)
+            
+            self.source_pos = torch.cat(self.source_pos, dim=0)
+            self.source_y = torch.cat(self.source_y, dim=0)
+            self.source_force = torch.cat(self.source_force, dim=0)
+            self.num_atom_per_molecule = self.source_dataset[0].pos.shape[0] // self.source_dataset[0].y.shape[0]
             if self.enable_cluster:
                 self.num_cluster = num_cluster
                 with torch.no_grad():
                     cluster_ids = self.molecular_clustering(self.num_cluster)
-                    sampled_ids = self.sample_from_clusters(cluster_ids)
+                    sampled_ids = self.sample_from_clusters(cluster_ids, self.size // self.num_cluster)
             else:
-                # Random sampling if clustering is disabled
                 sampled_ids = torch.randperm(self.source_size)[:self.size]
-
+            print(sampled_ids)
+            print(len(sampled_ids))
             self.pos = source_dataset[sampled_ids].pos.clone().to(device)
             self.z = source_dataset[sampled_ids].z.clone().to(device)
             self.y = source_dataset[sampled_ids].y.clone().to(device)
             self.force = source_dataset[sampled_ids].force.clone().to(device)
-            self.num_atom_per_molecule = self.pos.shape[0] // self.y.shape[0]
 
             self.pos.requires_grad_(pos_requires_grad)
             self.y.requires_grad_(energy_requires_grad)
@@ -284,8 +291,8 @@ class DistillDataset:
         batch_pos = self.pos[begin:end].view(batch_size, -1)
 
         # Reshape `source_dataset.pos`: [num_molecule * num_atom_per_molecule, C] -> [num_molecule, num_atom_per_molecule * C]
-        num_molecule = len(self.source_dataset.y)
-        source_pos = self.source_dataset.pos.view(num_molecule, -1)
+        num_molecule = len(self.source_y)
+        source_pos = self.source_pos.view(num_molecule, -1)
 
         # Find the closest molecule in `source_dataset` for each batch molecule
         distances = torch.cdist(batch_pos, source_pos)  # [B, num_molecule]
@@ -299,9 +306,9 @@ class DistillDataset:
             start = molecule_idx * self.num_atom_per_molecule
             stop = (molecule_idx + 1) * self.num_atom_per_molecule
 
-            new_pos.append(self.source_dataset.pos[start:stop])
-            new_force.append(self.source_dataset.force[start:stop])
-            new_energy.append(self.source_dataset.y[molecule_idx])
+            new_pos.append(self.source_pos[start:stop])
+            new_force.append(self.source_force[start:stop])
+            new_energy.append(self.source_y[molecule_idx])
 
         new_pos = torch.cat(new_pos).to(self.pos.device)
         new_force = torch.cat(new_force).to(self.force.device)
@@ -402,13 +409,13 @@ class DistillDataset:
         """
         Perform clustering based only on the `pos` feature of molecules.
         """
-        num_molecules = len(self.y)
+        num_molecules = len(self.source_dataset)
         molecular_features = []
 
         for i in range(num_molecules):
             begin = self.num_atom_per_molecule * i
             end = self.num_atom_per_molecule * (i + 1)
-            pos = self.pos[begin:end].reshape(-1)
+            pos = self.source_pos[begin:end].reshape(-1)
             molecular_features.append(pos)
 
         molecular_features = torch.stack(molecular_features).cpu().numpy()
@@ -416,10 +423,11 @@ class DistillDataset:
         molecular_features_scaled = scaler.fit_transform(molecular_features)
 
         kmeans = KMeans(n_clusters=num_clusters, random_state=42)
-        cluster_ids = kmeans.fit_predict(molecular_features_scaled)  # Cluster IDs of molecules [M]
+        cluster_ids = kmeans.fit_predict(molecular_features_scaled)
+        
         return cluster_ids
 
-    def sample_from_clusters(self, cluster_ids):
+    def sample_from_clusters(self, cluster_ids, num_samples_per_cluster):
         """
         Uniformly sample one molecule from each cluster.
         """
@@ -427,9 +435,55 @@ class DistillDataset:
         unique_clusters = set(cluster_ids)
         for cluster in unique_clusters:
             cluster_indices = torch.where(torch.tensor(cluster_ids) == cluster)[0]
-            sampled_id = cluster_indices[torch.randint(len(cluster_indices), (1,))].item()
+            sampled_id = cluster_indices[torch.randint(len(cluster_indices), (num_samples_per_cluster,))]
             sampled_ids.append(sampled_id)
-        return torch.tensor(sampled_ids)
+        return torch.concat(sampled_ids, dim=0)
+    
+    def save(self, save_path):
+        torch.save({
+            'z': self.z.detach().cpu(),
+            'pos': self.pos.detach().cpu(),
+            'y': self.y.detach().cpu(),
+            'force': self.force.detach().cpu(),
+            'distill_lr': self.distill_lr.detach().cpu()
+            }, save_path)
+        print(f"Distill dataset saved to {save_path}")
+    
+    @classmethod
+    def load(cls, load_path, device, pos_requires_grad=False, energy_requires_grad=False, force_requires_grad=False, lr_requires_grad=False, cluster_rate=0.5):
+        checkpoint = torch.load(load_path)
+        dataset = cls(
+            source_dataset=None,
+            distill_rate=1.0,  
+            distill_lr=checkpoint['distill_lr'], 
+            device=device,
+            pos_requires_grad=pos_requires_grad,
+            energy_requires_grad=energy_requires_grad,
+            force_requires_grad=force_requires_grad,
+            noise_pos=False
+        )
+        
+        dataset.z = checkpoint['z'].to(device)
+        dataset.pos = checkpoint['pos'].to(device)
+        dataset.y = checkpoint['y'].to(device)
+        dataset.force = checkpoint['force'].to(device)
+        dataset.distill_lr = checkpoint['distill_lr'].to(device)
+        dataset.size = len(dataset.y)
+        dataset.num_atom_per_molecule = dataset.pos.shape[0] // dataset.y.shape[0]
+        
+        dataset.pos.requires_grad_(pos_requires_grad)
+        dataset.y.requires_grad_(energy_requires_grad)
+        dataset.force.requires_grad_(force_requires_grad)
+        dataset.distill_lr.requires_grad_(lr_requires_grad)
+        dataset.num_atom_per_molecule = dataset.pos.shape[0] // dataset.y.shape[0]
+        
+        dataset.num_cluster = int(dataset.size * cluster_rate)
+        with torch.no_grad():
+            _, dataset.cz = dataset.molecular_clustering(dataset.num_cluster)
+            dataset.cz = torch.from_numpy(dataset.cz).long().to(device)
+        
+        print(f"Distill dataset loaded from {load_path}")
+        return dataset
 
 from torch_geometric.data import Data
 from torch.utils.data import Dataset
