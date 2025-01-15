@@ -4,7 +4,7 @@ distill_cfg:
   num_iteration: 200
   num_step_per_iteration: 16
   all_distill_data_per_iteration: True
-  enable_cluster: False
+  enable_cluster: True
   num_cluster: 10
   expert_network: "SchNet"
   expert_trajectory_dir: ".ckpt/expert_trajectory/schnet/benzene"

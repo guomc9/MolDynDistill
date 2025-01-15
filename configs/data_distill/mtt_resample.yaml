@@ -37,4 +37,4 @@ distill_cfg:
   force_requires_grad: False
   revise_energy_and_force: True
   check_energy_and_force: False
-  resample_with_nearest_molecular_configuration: False
+  resample_with_nearest_molecular_configuration: True

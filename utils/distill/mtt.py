@@ -49,7 +49,8 @@ class MTT:
         distill_lr_lr: float = None, 
         distill_base_lr: float = 1.0e-4, 
         all_distill_data_per_iteration: bool = True, 
-        noise_pos: bool = True, 
+        enable_cluster: bool = True, 
+        num_cluster: int = 10, 
         distill_lr_pos: float = None, 
         distill_lr_energy: float = None, 
         distill_lr_force: float = None, 
@@ -69,6 +70,7 @@ class MTT:
         enable_log: bool = True, 
         revise_energy_and_force: bool = True, 
         check_energy_and_force: bool = True, 
+        resample_with_nearest_molecular_configuration: bool = True, 
         shuffle_distill: bool = False, 
         **kwargs
     ):
@@ -102,7 +104,12 @@ class MTT:
         
         load_net = get_network(name=expert_network_name, return_assistant_net=False, **expert_network_dict)
         student_net = ReparamModule(student_net)
-        distill_dataset = DistillDataset(source_dataset=train_dataset, distill_rate=distill_rate, distill_lr=distill_base_lr, device=device, pos_requires_grad=pos_requires_grad or distill_energy_and_force, energy_requires_grad=energy_requires_grad, force_requires_grad=force_requires_grad, noise_pos=noise_pos)
+        distill_dataset = DistillDataset(source_dataset=train_dataset, distill_rate=distill_rate, 
+                                         distill_lr=distill_base_lr, device=device, 
+                                         enable_cluster=enable_cluster, num_cluster=num_cluster, 
+                                         pos_requires_grad=pos_requires_grad or distill_energy_and_force, 
+                                         energy_requires_grad=energy_requires_grad, 
+                                         force_requires_grad=force_requires_grad)
 
         distill_dataset.save(os.path.join(save_dir, '0.pt'))
 
@@ -118,13 +125,6 @@ class MTT:
         self.scheduler_lr = None
         self.scheduler_energy = None
         self.scheduler_force = None
-        
-        # if enable_assistant_net and distill_lr_assistant_net is not None:
-        #     self.optimizer_assistant = optim.SGD(assistant_net.parameters(), lr=distill_lr_assistant_net, momentum=0.0)
-        # if pos_requires_grad and distill_lr_pos is not None:
-        #     self.optimizer_pos = optim.SGD([distill_dataset.get_pos()], lr=distill_lr_pos, momentum=0.0)
-        # if lr_requires_grad and distill_lr_lr is not None:
-        #     self.optimizer_lr = optim.SGD([distill_dataset.get_lr()], lr=distill_lr_lr, momentum=0.0)
         
         if enable_assistant_net and distill_lr_assistant_net is not None:
             if distill_optimizer_type == 'adam':
@@ -446,6 +446,9 @@ class MTT:
                 if check_energy_and_force and best_expert_net is not None:
                     self._check_energy_and_force(distill_dataset, best_expert_net, batch_size=distill_batch, device=device, enable_log=enable_log, step=it, energy_and_force=distill_energy_and_force)
                 
+                if resample_with_nearest_molecular_configuration:
+                    self._resample_with_nearest_molecule_configuration(distill_dataset, batch_size=distill_batch, device=device, enable_log=enable_log, step=it)
+                
                 for _ in student_params_list:
                     del _
                 del output, batch_data, grad
@@ -534,6 +537,43 @@ class MTT:
             if energy_and_force:
                 del force
             del output
+            
+            torch.cuda.empty_cache()
+            
+        if enable_log:
+            for key in check_info:
+                wandb.log({
+                    f"{key}/mean": check_info[key]['mean'],
+                    f"{key}/max": check_info[key]['max'],
+                    f"{key}/min": check_info[key]['min'],
+                }, step=step)
+            
+        print(check_info)
+        return check_info
+    
+    def _resample_with_nearest_molecule_configuration(self, distill_dataset, batch_size, device, enable_log, step):
+        print(f'resampling with nearest molecule configuration from source dataset')
+        num_steps = (len(distill_dataset) + batch_size - 1) // batch_size
+        check_info = None
+        for i in range(num_steps):
+            indices = torch.arange(i * batch_size, (i + 1) * batch_size if (i + 1) * batch_size < len(distill_dataset) else len(distill_dataset), device=device, dtype=torch.long)
+            batch_data = distill_dataset.get_batch(indices)
+            temp_check_info = distill_dataset.resample_batch(indices)
+            if check_info is None:
+                check_info = temp_check_info
+                for key in check_info:
+                    check_info[key]['mean'] = check_info[key]['mean'] / num_steps
+            else:
+                for key in temp_check_info:
+                    if key in check_info:
+                        for sub_key in temp_check_info[key]:
+                            if sub_key in check_info[key]:
+                                if sub_key == 'max':
+                                    check_info[key][sub_key] = max(check_info[key][sub_key], temp_check_info[key][sub_key])
+                                if sub_key == 'min':
+                                    check_info[key][sub_key] = min(check_info[key][sub_key], temp_check_info[key][sub_key])
+                                if sub_key == 'mean':
+                                    check_info[key][sub_key] = check_info[key][sub_key] + temp_check_info[key][sub_key] / num_steps
             
             torch.cuda.empty_cache()
             
